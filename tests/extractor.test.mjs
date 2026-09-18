@@ -124,6 +124,19 @@ test('stated-total cross-check flags a mismatch at file level', () => {
   assert.ok(fileWarnings.includes('count-mismatch'));
 });
 
+test('a stated-total mismatch is a file-level warning; rows are not individually flagged', () => {
+  const page = makePage(
+    [{ name: 'Mr Only, Person', booking: 'TT / A1', flight: 'EI/86', time: '08:15', city: 'Dublin', date: '20-SEP-26' }],
+    { total: 5 },
+  );
+  const extraction = extractRowsFromPages([page], 'x.pdf');
+  assert.ok(extraction.fileWarnings.includes('count-mismatch'));
+  const [rec] = toPassengerRecords(extraction);
+  // The reconstructed row itself is fine — a mismatch means a row may be
+  // MISSING from extraction, not that this row is wrong.
+  assert.equal(rec.reviewRequired, false);
+});
+
 test('a file with no text layer is reported, never silently empty', () => {
   const { rows, fileWarnings } = extractRowsFromPages([{ pageNumber: 1, items: [] }], 'scanned.pdf');
   assert.equal(rows.length, 0);

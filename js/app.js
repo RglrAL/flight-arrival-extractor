@@ -166,6 +166,18 @@ function renderResults() {
       </div>`).join('');
 
   const warnings = [];
+  // Document integrity first: a stated-total mismatch means extraction may be
+  // incomplete (a row missing), so it is a file-level warning — it does not
+  // mark the successfully reconstructed rows as suspect.
+  for (const f of state.files) {
+    const w = f.extraction ? f.extraction.fileWarnings : [];
+    if (w.includes('count-mismatch')) {
+      warnings.push(`<div class="warnblock"><h4>⚠ Extraction may be incomplete — review required: <em>${esc(f.name)}</em> states ${f.extraction.statedTotal} passengers but ${f.records.length} rows were reconstructed.</h4></div>`);
+    }
+    if (f.error || w.includes('no-text-layer') || w.includes('no-header-found')) {
+      warnings.push(`<div class="warnblock"><h4>⚠ Could not reliably extract <em>${esc(f.name)}</em> — its passengers are NOT in this schedule. Please review that PDF manually.</h4></div>`);
+    }
+  }
   if (s.incompleteOnDate.length > 0) {
     warnings.push(`<div class="warnblock"><h4>⚠ Dated ${esc(display)} but incomplete (no flight/time on their row) — not shown in the schedule above</h4>
       <ul>${s.incompleteOnDate.map((p) => `<li><button class="passenger" data-preview="${esc(p.id)}">${esc(p.passengerName)}</button> <span class="source">${esc(p.sourceFile)}</span></li>`).join('')}</ul></div>`);
@@ -186,7 +198,7 @@ function renderResults() {
     <h2>${esc(display)}</h2>
     <h3>${esc(cityLine)}</h3>
     ${groupsHtml}
-    <p class="totals">Total flights: <strong>${s.totals.flights}</strong> &nbsp;·&nbsp; Total passengers: <strong>${s.totals.passengers}</strong>${s.totals.incompleteOnDate ? ` &nbsp;·&nbsp; <span class="warn">${s.totals.incompleteOnDate} incomplete (listed below)</span>` : ''}</p>
+    <p class="totals">Total flights: <strong>${s.totals.flights}</strong> &nbsp;·&nbsp; Total passengers: <strong>${s.totals.passengers}</strong>${s.duplicateIds.size > 0 ? ` &nbsp;·&nbsp; <span class="warn">includes ${s.duplicateIds.size} possible duplicates — review below</span>` : ''}${s.totals.incompleteOnDate ? ` &nbsp;·&nbsp; <span class="warn">${s.totals.incompleteOnDate} incomplete (listed below)</span>` : ''}</p>
     ${warnings.join('')}
     <div class="exportrow">
       <button id="xlsxBtn" class="secondary">Export Excel</button>
@@ -222,13 +234,12 @@ function toggleAudit() {
       <td>${esc(r.arrivalTime ?? '')}</td>
       <td>${esc(r.arrivalCity ?? '')}</td>
       <td>${esc(r.raw?.date || '')}</td>
-      <td>${r.extractionConfidence}%</td>
       <td>${included ? '✓ included' : esc(statusLabel(r, s))}</td>
       <td class="source">${esc(r.sourceFile)} p${r.sourcePage}</td>
     </tr>`;
   }).join('');
   el.innerHTML = `<table>
-    <thead><tr><th>Passenger</th><th>Booking ID</th><th>Flight</th><th>Time</th><th>City</th><th>Date (as printed)</th><th>Confidence</th><th>Status</th><th>Source</th></tr></thead>
+    <thead><tr><th>Passenger</th><th>Booking ID</th><th>Flight</th><th>Time</th><th>City</th><th>Date (as printed)</th><th>Status</th><th>Source</th></tr></thead>
     <tbody>${rows}</tbody></table>`;
   el.hidden = false;
   el.querySelectorAll('[data-preview]').forEach((b) => {

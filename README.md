@@ -40,6 +40,13 @@ physically printed on **their own row**:
 - Possible duplicates across PDFs are flagged, never silently removed.
 - Click any passenger to see their original row highlighted in the source PDF.
 
+## V1 limitation
+
+V1 accepts PDFs containing an extractable text layer (all current operational
+reports do). Scanned/image-only PDFs are rejected with *"Could not reliably
+extract this PDF"* rather than processed heuristically — fail visibly, never
+guess. OCR support is a future enhancement.
+
 ## Using it
 
 Serve the folder with any static file server (or use the hosted GitHub Pages
@@ -56,7 +63,7 @@ It also works offline once loaded, and can be installed as an app
 ## Development
 
 Plain ES modules — no build step. `js/extractor.js` (row reconstruction),
-`js/validate.js` (confidence + review flags), `js/schedule.js`
+`js/validate.js` (validation + review flags), `js/schedule.js`
 (filter/group/sort/duplicates), `js/exports.js`, `js/preview.js`, `js/app.js`.
 pdf.js and SheetJS are vendored in `vendor/`.
 

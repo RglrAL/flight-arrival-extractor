@@ -3,7 +3,6 @@
 passenger travel info sheets/
 brief/
 *.pdf
-!tests/fixtures/*.pdf
 
 # OS / editor noise
 .DS_Store

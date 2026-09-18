@@ -6,10 +6,14 @@ import { parseDate, parseTime, flightLooksTypical } from './normalize.js';
 
 /**
  * rawRow: output of extractor (cells, page, y, cellBoxes, flags, sourceFile, sourceRow)
- * fileWarnings: file-level warnings from the extractor for this row's file.
  * Returns a PassengerArrival record.
+ *
+ * Note: file-level warnings (e.g. a stated-total mismatch) are a document
+ * integrity concern surfaced by the UI — they do not mark individual rows as
+ * suspect, because a count mismatch means a row may be MISSING, not that the
+ * reconstructed rows are wrong.
  */
-export function toPassengerRecord(rawRow, fileWarnings = []) {
+export function toPassengerRecord(rawRow) {
   const { cells } = rawRow;
   const date = parseDate(cells.date);
   const time = parseTime(cells.time);
@@ -37,7 +41,6 @@ export function toPassengerRecord(rawRow, fileWarnings = []) {
     flags.push('unusual-flight-format');
     confidence -= 10;
   }
-  if (fileWarnings.includes('count-mismatch')) flags.push('file-count-mismatch');
 
   confidence = Math.max(0, Math.min(100, confidence));
 
@@ -54,7 +57,6 @@ export function toPassengerRecord(rawRow, fileWarnings = []) {
   const structuralDoubt = flags.some((f) => [
     'band-straddle', 'no-name-cell', 'item-left-of-table',
     'ambiguous-date', 'unparseable-date', 'unparseable-time',
-    'file-count-mismatch',
   ].includes(f));
 
   return {
@@ -79,5 +81,5 @@ export function toPassengerRecord(rawRow, fileWarnings = []) {
 
 /** Convenience: validate a whole extracted file. */
 export function toPassengerRecords(extraction) {
-  return extraction.rows.map((r) => toPassengerRecord(r, extraction.fileWarnings));
+  return extraction.rows.map((r) => toPassengerRecord(r));
 }
