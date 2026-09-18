@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flight Arrival Extractor</title>
+  <meta name="description" content="Extract flight arrival schedules from Passenger Arrival Details PDFs — entirely in your browser. No data leaves your device.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#0b5fa5">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <h1>✈ Flight Arrival Extractor</h1>
+    <p class="tagline">Upload Passenger Arrival Details PDFs, pick a date, get the day's schedule.<br>
+    <strong>All processing happens on this device — the PDFs are never uploaded anywhere.</strong></p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1 &nbsp;Upload Passenger Arrival PDFs</h2>
+      <div id="dropzone" class="dropzone" role="button" tabindex="0">
+        <p><strong>+ Add PDFs</strong></p>
+        <p class="muted">Click to choose files, or drag and drop them here</p>
+      </div>
+      <input id="fileInput" type="file" accept="application/pdf,.pdf" multiple hidden>
+      <ul id="fileList" class="filelist"></ul>
+    </section>
+
+    <section class="card">
+      <h2>2 &nbsp;Arrival date</h2>
+      <div class="daterow">
+        <input id="arrivalDate" type="date">
+        <span id="weekday" class="weekday"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <button id="extractBtn" class="primary" disabled>Extract Arrivals</button>
+    </section>
+
+    <section id="results" class="card results" aria-live="polite"></section>
+  </main>
+
+  <dialog id="previewDialog">
+    <div class="dialoghead">
+      <span id="previewTitle"></span>
+      <button id="previewClose" class="linkbtn">✕ Close</button>
+    </div>
+    <div id="previewScroll" class="previewscroll">
+      <canvas id="previewCanvas"></canvas>
+    </div>
+  </dialog>
+
+  <footer>
+    <p class="muted">Rows are reconstructed from the PDF's printed layout. A passenger is only ever linked to the flight, time and date printed on their own row — never inferred from a neighbouring row. Uncertain rows are flagged for review instead of guessed.</p>
+  </footer>
+
+  <script src="vendor/xlsx/xlsx.full.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
