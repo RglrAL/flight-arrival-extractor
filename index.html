@@ -7,55 +7,102 @@
   <meta name="description" content="Extract flight arrival schedules from Passenger Arrival Details PDFs — entirely in your browser. No data leaves your device.">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <meta name="theme-color" content="#0b5fa5">
+  <meta name="theme-color" content="#f3f6fa" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#10161d" media="(prefers-color-scheme: dark)">
+  <link rel="preload" href="vendor/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <header>
-    <h1>✈ Flight Arrival Extractor</h1>
-    <p class="tagline">Upload Passenger Arrival Details PDFs, pick a date, get the day's schedule.<br>
-    <strong>All processing happens on this device — the PDFs are never uploaded anywhere.</strong></p>
+  <a class="skiplink" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <span class="brand">
+        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21.5 15.6c.6.2.9.8.7 1.4-.2.6-.8.9-1.4.7l-6.6-1.9-3.2 5.4c-.2.4-.7.6-1.1.5l-.9-.3 1-5.9-4.6-1.3-1.6 1.7c-.2.3-.6.4-1 .3l-.7-.2 1-3.1-.6-3.2.7-.2c.4-.1.8 0 1 .3l1.4 1.9 4.6 1.3 2.3-5.5.9.2c.5.1.8.6.7 1.1l-1.2 6.1 6.6 1.9Z"/></svg>
+        Flight Arrival Extractor
+      </span>
+      <nav class="topbar-actions" aria-label="Application">
+        <button id="installBtn" class="ghostbtn" hidden>Install app</button>
+        <button id="helpBtn" class="ghostbtn">Help</button>
+        <button id="aboutBtn" class="ghostbtn">About</button>
+      </nav>
+    </div>
   </header>
 
-  <main>
-    <section class="card">
-      <h2>1 &nbsp;Upload Passenger Arrival PDFs</h2>
-      <div id="dropzone" class="dropzone" role="button" tabindex="0">
-        <p><strong>+ Add PDFs</strong></p>
-        <p class="muted">Click to choose files, or drag and drop them here</p>
-      </div>
-      <input id="fileInput" type="file" accept="application/pdf,.pdf" multiple hidden>
-      <ul id="fileList" class="filelist"></ul>
-    </section>
+  <main id="main" class="shell">
+    <ol class="steps" aria-label="Workflow steps">
+      <li class="step is-active" id="stepUpload"><span class="step-num" aria-hidden="true">1</span><span>Upload</span></li>
+      <li class="step" id="stepDate"><span class="step-num" aria-hidden="true">2</span><span>Select date</span></li>
+      <li class="step" id="stepReview"><span class="step-num" aria-hidden="true">3</span><span>Review arrivals</span></li>
+    </ol>
 
-    <section class="card">
-      <h2>2 &nbsp;Arrival date</h2>
-      <div class="daterow">
-        <input id="arrivalDate" type="date">
-        <span id="weekday" class="weekday"></span>
-      </div>
-    </section>
+    <div class="workspace">
+      <section class="card" id="uploadCard">
+        <header class="card-head">
+          <h2>Passenger arrival PDFs</h2>
+          <button id="filesToggle" class="ghostbtn" hidden aria-expanded="true" aria-controls="uploadBody">Manage files</button>
+        </header>
+        <p id="uploadSummary" class="upload-summary" hidden></p>
+        <div id="uploadBody">
+          <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Add PDF files">
+            <svg class="dz-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm8 1.5V8h4.5L14 3.5ZM8.6 17.8v-4.9h1.8c.5 0 .9.1 1.2.3.3.2.4.6.4 1s-.1.8-.4 1c-.3.2-.7.3-1.2.3h-.8v2.2h-1Zm1-3h.7c.4 0 .7-.2.7-.6 0-.4-.3-.6-.7-.6h-.7v1.2Z"/></svg>
+            <p class="dz-primary">Add PDFs</p>
+            <p class="dz-secondary">Click to choose files, or drag and drop</p>
+            <p class="privacy-chip"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3Zm-1.2 13.6-2.9-2.9 1.1-1.1 1.8 1.8 4.2-4.2 1.1 1.1-5.3 5.3Z"/></svg>Processed on this device — never uploaded</p>
+          </div>
+          <input id="fileInput" type="file" accept="application/pdf,.pdf" multiple hidden>
+          <ul id="fileList" class="filelist"></ul>
+        </div>
+      </section>
 
-    <section class="card">
-      <button id="extractBtn" class="primary" disabled>Extract Arrivals</button>
-    </section>
+      <section class="card" id="dateCard">
+        <header class="card-head"><h2>Arrival date</h2></header>
+        <div id="dateChips" class="datechips" hidden></div>
+        <div class="daterow">
+          <input id="arrivalDate" type="date" aria-label="Arrival date">
+          <span id="weekday" class="weekday" aria-live="polite"></span>
+        </div>
+        <button id="extractBtn" class="primary" disabled>Extract arrivals</button>
+      </section>
+    </div>
 
-    <section id="results" class="card results" aria-live="polite"></section>
+    <section id="results" class="results" aria-live="polite"></section>
   </main>
 
-  <dialog id="previewDialog">
+  <footer class="shell pagefoot">
+    <p>Rows are read from each PDF's printed layout — a passenger is only ever linked to the flight, time and date on their own row. Uncertain rows are flagged, never guessed.</p>
+  </footer>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <dialog id="previewDialog" class="lightbox">
     <div class="dialoghead">
       <span id="previewTitle"></span>
-      <button id="previewClose" class="linkbtn">✕ Close</button>
+      <button id="previewClose" class="ghostbtn">✕ Close</button>
     </div>
     <div id="previewScroll" class="previewscroll">
       <canvas id="previewCanvas"></canvas>
     </div>
   </dialog>
 
-  <footer>
-    <p class="muted">Rows are reconstructed from the PDF's printed layout. A passenger is only ever linked to the flight, time and date printed on their own row — never inferred from a neighbouring row. Uncertain rows are flagged for review instead of guessed.</p>
-  </footer>
+  <dialog id="helpDialog" class="infodialog">
+    <div class="dialoghead"><span>Help</span><button class="ghostbtn" data-close="helpDialog">✕ Close</button></div>
+    <ol class="helplist">
+      <li><strong>Upload</strong> one or more “Passenger Arrival Details” PDFs. Each file is read on this device and its rows are checked against the PDF's own passenger total.</li>
+      <li><strong>Select the arrival date.</strong> Only passengers whose own row carries that date are included — never the report date or a neighbouring row.</li>
+      <li><strong>Review arrivals.</strong> Flights are grouped and sorted by time. Anything uncertain appears in the review panel instead of being guessed. Click a passenger to see their original row highlighted in the source PDF.</li>
+      <li><strong>Print or export.</strong> “Print schedule” gives the clean list; “Print sheets + summary” reprints each original report with its day-summary added at the top; Excel/CSV exports carry the full row data.</li>
+    </ol>
+    <p class="dialognote">Scanned or image-only PDFs are rejected with a clear message rather than guessed — V1 requires PDFs with a text layer.</p>
+  </dialog>
+
+  <dialog id="aboutDialog" class="infodialog">
+    <div class="dialoghead"><span>About</span><button class="ghostbtn" data-close="aboutDialog">✕ Close</button></div>
+    <p><strong>Flight Arrival Extractor</strong> builds consolidated arrival schedules from tour operators' Passenger Arrival Details reports (Trafalgar, Insight, Brendan, Costsaver…).</p>
+    <p><strong>Privacy:</strong> all processing happens in your browser. Passenger PDFs are never uploaded, stored or transmitted — closing the tab removes everything.</p>
+    <p><strong>Accuracy:</strong> table rows are reconstructed from the printed layout's coordinates, so a passenger can never inherit a flight, time or date from an adjacent row. Extracted counts are cross-checked against each PDF's own stated total, and anything uncertain is flagged for review.</p>
+    <p class="dialognote">Works offline once loaded. Use your browser's “Install app” / “Add to Dock” to keep it in easy reach.</p>
+  </dialog>
 
   <script src="vendor/xlsx/xlsx.full.min.js"></script>
   <script type="module" src="js/app.js"></script>

@@ -188,28 +188,81 @@ async function renderAnnotatedPage(page, summary, selectedDate, isFirst) {
   return { canvas, mode: 'band' };
 }
 
+/** Write the calm progress page into the popup; returns DOM update hooks. */
+function writeProgressPage(win, files, selectedDate) {
+  const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  win.document.open();
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>Preparing sheets — ${esc(formatDisplayDate(selectedDate))}</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+      font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: #f3f6fa; color: #10263c; }
+    @media (prefers-color-scheme: dark) { body { background: #10161d; color: #e6edf4; } .spcard { background: #1a222b !important; } .spfile { color: #94a4b4 !important; } }
+    .spcard { background: #fff; border-radius: 14px; padding: 28px 34px;
+      box-shadow: 0 6px 24px rgba(16,38,60,.10); min-width: 340px; max-width: 90vw; }
+    h1 { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+    .spstatus { font-size: 13px; color: #5c6c7d; margin: 0 0 14px; min-height: 1.2em; }
+    .spbar { height: 4px; border-radius: 2px; background: rgba(92,108,125,.2); overflow: hidden; margin-bottom: 16px; }
+    .spbar span { display: block; height: 100%; width: 0%; background: #0f62d6; border-radius: 2px; transition: width .18s ease; }
+    ul { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+    .spfile { display: flex; gap: 8px; align-items: baseline; padding: 2.5px 0; color: #5c6c7d; }
+    .spfile .tick { width: 1.1em; }
+    .spfile.done { color: inherit; } .spfile.done .tick { color: #0e7a4e; }
+  </style></head><body>
+  <div class="spcard">
+    <h1>Preparing arrival sheets</h1>
+    <p class="spstatus" id="spstatus">Starting…</p>
+    <div class="spbar"><span id="spbar"></span></div>
+    <ul>${files.map((f, i) => `<li class="spfile" id="spf${i}"><span class="tick">·</span>${esc(f.name)}</li>`).join('')}</ul>
+  </div></body></html>`);
+  win.document.close();
+  return {
+    status(text) { const el = win.document.getElementById('spstatus'); if (el) el.textContent = text; },
+    bar(frac) { const el = win.document.getElementById('spbar'); if (el) el.style.width = `${Math.round(frac * 100)}%`; },
+    fileDone(i) {
+      const el = win.document.getElementById(`spf${i}`);
+      if (el) { el.classList.add('done'); el.querySelector('.tick').textContent = '✓'; }
+    },
+  };
+}
+
 /**
  * Open a print view containing every readable uploaded PDF, page by page,
  * with the per-file summary added to each file's first page.
  * files: [{ name, doc, records }] (pdf.js doc); selectedDate: ISO.
  * `win` must have been opened synchronously by the caller's click handler.
+ * Shows real per-file/per-page progress in the popup; closing the popup
+ * mid-render cancels cleanly.
  */
 export async function openAnnotatedSheets(files, selectedDate, win) {
+  const readable = files.filter((f) => f.doc);
+  const totalPages = readable.reduce((a, f) => a + f.doc.numPages, 0);
+  const ui = writeProgressPage(win, readable, selectedDate);
+
   const sections = [];
-  for (const f of files) {
-    if (!f.doc) continue;
+  let donePages = 0;
+  for (let fi = 0; fi < readable.length; fi++) {
+    const f = readable[fi];
     const summary = buildFileSummary(f.records, selectedDate);
     const imgs = [];
     for (let p = 1; p <= f.doc.numPages; p++) {
+      if (win.closed) return; // user cancelled — abort quietly
+      ui.status(`Rendering ${f.name} — page ${p} of ${f.doc.numPages}…`);
       const page = await f.doc.getPage(p);
       const { canvas } = await renderAnnotatedPage(page, summary, selectedDate, p === 1);
       imgs.push({
         src: canvas.toDataURL('image/jpeg', 0.85),
         landscape: canvas.width > canvas.height,
       });
+      donePages += 1;
+      ui.bar(donePages / totalPages);
     }
+    ui.fileDone(fi);
     sections.push({ name: f.name, imgs });
   }
+  if (win.closed) return;
+  ui.status('Finishing…');
 
   const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const body = sections.map((s) =>
