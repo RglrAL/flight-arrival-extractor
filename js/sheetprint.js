@@ -63,14 +63,15 @@ export function rectIntersectsAny(rect, rects, margin = 0) {
     rect.y + rect.h > r.y - margin);
 }
 
-/** Compute the summary block's lines, fonts and box size for a page height H. */
-function layoutSummary(ctx, H, summary, selectedDate, tdName) {
+/**
+ * Compute the summary block's lines, fonts and box size for a page height H.
+ * maxBoxH caps the block's height: the column split adapts (more, shorter
+ * columns) so the box fits the space between the TD line and the table.
+ */
+function layoutSummary(ctx, H, summary, selectedDate, maxBoxH = Infinity) {
   const showCity = new Set(summary.flights.map((f) => f.arrivalCity ?? '')).size > 1;
   const lines = [];
   lines.push({ text: formatDisplayDate(selectedDate), color: INK.head, bold: true });
-  if (tdName) {
-    lines.push({ text: `TD: ${tdName}`, color: INK.td, bold: true });
-  }
   if (summary.flights.length === 0) {
     lines.push({ text: 'No arrivals this date in this report', color: INK.T2, bold: false });
   } else {
@@ -95,15 +96,16 @@ function layoutSummary(ctx, H, summary, selectedDate, tdName) {
     lines.push({ text: `⚠ +${summary.incomplete} dated this day, no flight on row`, color: INK.warn, bold: false });
   }
 
-  // Split into columns when long, so the block stays shallow.
-  const maxRows = 8;
-  const columns = [];
-  for (let i = 0; i < lines.length; i += maxRows) columns.push(lines.slice(i, i + maxRows));
-
   const fs = Math.max(14, Math.round(H * 0.021));
   const lineH = Math.round(fs * 1.4);
   const pad = Math.round(fs * 0.8);
   const gap = Math.round(pad * 1.5);
+
+  // Split into columns when long, so the block stays shallow — and never
+  // taller than the available space (minimum 4 rows per column).
+  const maxRows = Math.min(8, Math.max(4, Math.floor((maxBoxH - pad * 2) / lineH)));
+  const columns = [];
+  for (let i = 0; i < lines.length; i += maxRows) columns.push(lines.slice(i, i + maxRows));
 
   const colWidths = columns.map((col) => {
     let w = 0;
@@ -143,9 +145,9 @@ function drawSummaryBox(ctx, x0, y0, L) {
   ctx.restore();
 }
 
-/** Viewport-space bounding boxes of every piece of printed text on the page. */
-function textRectsInViewport(textContent, viewport) {
-  const rects = [];
+/** Viewport-space text items ({ str, rect }) for every piece of printed text. */
+function textItemsInViewport(textContent, viewport) {
+  const items = [];
   for (const it of textContent.items) {
     if (!it.str || it.str.trim() === '') continue;
     const x = it.transform[4];
@@ -153,14 +155,61 @@ function textRectsInViewport(textContent, viewport) {
     const [ax0, ay0, ax1, ay1] = viewport.convertToViewportRectangle(
       [x, y, x + (it.width || 0), y + (it.height || 0)],
     );
-    rects.push({
-      x: Math.min(ax0, ax1),
-      y: Math.min(ay0, ay1),
-      w: Math.abs(ax1 - ax0),
-      h: Math.abs(ay1 - ay0),
+    items.push({
+      str: it.str,
+      rect: {
+        x: Math.min(ax0, ax1),
+        y: Math.min(ay0, ay1),
+        w: Math.abs(ax1 - ax0),
+        h: Math.abs(ay1 - ay0),
+      },
     });
   }
-  return rects;
+  return items;
+}
+
+/**
+ * Placement for "TD: <name>", centered above the report's own "Passenger
+ * Arrival Details" title (located from the page's text coordinates; falls
+ * back to a fixed header position when the title isn't found). Computed
+ * before the summary box so the box can avoid it.
+ */
+function tdPlacement(ctx, W, H, tdName, textItems) {
+  const fs = Math.max(16, Math.round(H * 0.024));
+  // The big centered title (the top-left corner repeats the same words in
+  // small print — pick the widest occurrence).
+  const title = textItems
+    .filter((t) => t.str.trim() === 'Passenger Arrival Details')
+    .sort((a, b) => b.rect.w - a.rect.w)[0];
+  const baselineY = title ? Math.max(fs + 6, title.rect.y - Math.round(fs * 0.55)) : Math.round(H * 0.07);
+  ctx.save();
+  ctx.font = `600 ${fs}px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif`;
+  const text = `TD: ${tdName}`;
+  const tw = ctx.measureText(text).width;
+  ctx.restore();
+  const pad = Math.round(fs * 0.45);
+  return {
+    text, fs, baselineY, pad,
+    rect: {
+      x: W / 2 - tw / 2 - pad,
+      y: baselineY - fs - pad * 0.6,
+      w: tw + pad * 2,
+      h: fs + pad * 1.3,
+    },
+  };
+}
+
+function drawTd(ctx, W, td) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+  ctx.beginPath();
+  ctx.roundRect(td.rect.x, td.rect.y, td.rect.w, td.rect.h, 6);
+  ctx.fill();
+  ctx.font = `600 ${td.fs}px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif`;
+  ctx.fillStyle = INK.td;
+  ctx.textAlign = 'center';
+  ctx.fillText(td.text, W / 2, td.baselineY);
+  ctx.restore();
 }
 
 /**
@@ -183,24 +232,34 @@ async function renderAnnotatedPage(page, summary, selectedDate, isFirst, tdName 
 
   const W = pageCanvas.width;
   const H = pageCanvas.height;
-  const L = layoutSummary(pctx, H, summary, selectedDate, tdName);
+  const textItems = textItemsInViewport(await page.getTextContent(), viewport);
+  const textRects = textItems.map((t) => t.rect);
+  const td = tdName ? tdPlacement(pctx, W, H, tdName, textItems) : null;
+
+  // The box lives between the TD line and the table's own header row.
+  const tableHeader = textItems.find((t) => t.str.trim() === 'Passenger Name');
+  const tableTop = tableHeader ? tableHeader.rect.y : Math.round(H * 0.34);
+  const yFloor = td ? Math.round(td.rect.y + td.rect.h + 8) : Math.round(H * 0.03);
+  const L = layoutSummary(pctx, H, summary, selectedDate, tableTop - yFloor - 10);
 
   // Overlay spot: top-right header area, like the handwritten notes. A few
   // candidate positions are tried to find a spot clear of printed text; when
-  // none is fully clear, the default spot is used regardless — the summary
-  // belongs ON the sheet (per Alan), just as the pen version wrote over the
-  // header.
+  // none is fully clear, the topmost allowed spot is used regardless — the
+  // summary belongs ON the sheet (per Alan), as the pen version wrote over
+  // the header. It never covers the TD line or the table's header row.
   const x0 = W - L.boxW - Math.round(W * 0.015);
-  const textRects = textRectsInViewport(await page.getTextContent(), viewport);
-  let y0 = Math.round(H * 0.03);
-  for (const yFrac of [0.03, 0.06, 0.09]) {
-    const y = Math.round(H * yFrac);
-    if (!rectIntersectsAny({ x: x0, y, w: L.boxW, h: L.boxH }, textRects, Math.round(L.fs / 4))) {
+  const obstacles = td ? [...textRects, td.rect] : textRects;
+  let y0 = yFloor;
+  for (const dy of [0, Math.round(H * 0.03), Math.round(H * 0.06)]) {
+    const y = yFloor + dy;
+    if (y + L.boxH > tableTop - 4) break;
+    if (!rectIntersectsAny({ x: x0, y, w: L.boxW, h: L.boxH }, obstacles, Math.round(L.fs / 4))) {
       y0 = y;
       break;
     }
   }
   drawSummaryBox(pctx, x0, y0, L);
+  if (td) drawTd(pctx, W, td);
   return { canvas: pageCanvas, mode: 'overlay' };
 }
 
