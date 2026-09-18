@@ -2,7 +2,7 @@
 // handwriting "05:10 EI/122 × 7" on top of each report).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildFileSummary } from '../js/sheetprint.js';
+import { buildFileSummary, rectIntersectsAny } from '../js/sheetprint.js';
 
 function rec(over = {}) {
   return {
@@ -52,4 +52,19 @@ test('rows dated the day but missing flight/time are counted as incomplete, neve
 test('empty result for a file with nothing on the date', () => {
   const s = buildFileSummary([rec({ arrivalDate: '2026-09-12' })], '2026-09-13');
   assert.deepEqual(s, { flights: [], total: 0, incomplete: 0 });
+});
+
+// The overlay-vs-band decision: the summary is only drawn over the page when
+// the target area is verified empty of printed text.
+test('collision check: overlapping text is detected, clear space is not', () => {
+  const spot = { x: 100, y: 10, w: 200, h: 80 };
+  const clearRects = [
+    { x: 10, y: 10, w: 50, h: 12 },    // left of spot
+    { x: 100, y: 200, w: 200, h: 12 }, // below spot
+  ];
+  assert.equal(rectIntersectsAny(spot, clearRects), false);
+  assert.equal(rectIntersectsAny(spot, [...clearRects, { x: 250, y: 60, w: 40, h: 12 }]), true);
+  // Margin catches near-misses.
+  assert.equal(rectIntersectsAny(spot, [{ x: 302, y: 20, w: 40, h: 12 }]), false);
+  assert.equal(rectIntersectsAny(spot, [{ x: 302, y: 20, w: 40, h: 12 }], 5), true);
 });
