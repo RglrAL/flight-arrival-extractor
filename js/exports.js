@@ -97,6 +97,35 @@ function rowFor(p) {
   };
 }
 
+/**
+ * Print an HTML document via a hidden same-page iframe. No popup window —
+ * immune to popup blockers (the reason sheet printing failed in real
+ * Safari) — and the print dialog only opens after every image has decoded,
+ * so nothing prints blank.
+ */
+export async function printHtml(html) {
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:2px;height:2px;border:0;visibility:hidden;';
+  document.body.appendChild(iframe);
+  try {
+    await new Promise((resolve) => {
+      iframe.onload = resolve;
+      iframe.srcdoc = html;
+    });
+    const doc = iframe.contentDocument;
+    await Promise.all([...doc.images].map((img) =>
+      img.decode().catch(() => new Promise((r) => {
+        if (img.complete) r();
+        else { img.onload = r; img.onerror = r; }
+      }))));
+    iframe.contentWindow.focus();
+    iframe.contentWindow.print();
+  } finally {
+    // Keep the frame alive while the (modal) print dialog is open.
+    setTimeout(() => iframe.remove(), 60_000);
+  }
+}
+
 /** Open a clean printable schedule; the browser's print dialog does PDF. */
 export function openPrintView(schedule) {
   const display = formatDisplayDate(schedule.selectedDate);
@@ -136,9 +165,5 @@ export function openPrintView(schedule) {
   <p class="totals">Total flights: ${schedule.totals.flights}<br>Total passengers: ${schedule.totals.passengers}</p>
   </body></html>`;
 
-  const w = window.open('', '_blank');
-  w.document.write(html);
-  w.document.close();
-  w.focus();
-  setTimeout(() => w.print(), 300);
+  printHtml(html);
 }

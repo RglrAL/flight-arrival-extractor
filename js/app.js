@@ -521,16 +521,44 @@ async function showPreview(id) {
 
 // ---------- Annotated sheets with progress ----------
 
+function showSheetsProgress(files) {
+  let cancelled = false;
+  const el = document.createElement('div');
+  el.className = 'progress-overlay';
+  el.innerHTML = `
+    <div class="progresscard" role="alertdialog" aria-label="Preparing arrival sheets" aria-live="polite">
+      <h3>Preparing arrival sheets</h3>
+      <p class="progress-status" id="spStatus">Starting…</p>
+      <div class="progress-bar"><span id="spBar"></span></div>
+      <ul class="progress-files">${files.map((f, i) => `<li id="spFile${i}"><span class="tick">·</span><span class="pf-name" title="${esc(f.name)}">${esc(f.name)}</span></li>`).join('')}</ul>
+      <button class="btn" id="spCancel">Cancel</button>
+    </div>`;
+  document.body.appendChild(el);
+  el.querySelector('#spCancel').addEventListener('click', () => { cancelled = true; });
+  return {
+    status(t) { const s = el.querySelector('#spStatus'); if (s) s.textContent = t; },
+    bar(f) { const b = el.querySelector('#spBar'); if (b) b.style.width = `${Math.round(f * 100)}%`; },
+    fileDone(i) {
+      const li = el.querySelector(`#spFile${i}`);
+      if (li) { li.classList.add('done'); li.querySelector('.tick').textContent = '✓'; }
+    },
+    cancelled: () => cancelled,
+    close() { el.remove(); },
+  };
+}
+
 async function onPrintSheets() {
   const btn = $('sheetsBtn');
   if (btn.disabled) return;
   btn.disabled = true;
-  // The window must be opened synchronously in the click, before the async
-  // page rendering, or popup blockers will eat it.
-  const win = window.open('', '_blank');
+  const overlay = showSheetsProgress(state.files.filter((f) => f.doc));
   try {
-    await openAnnotatedSheets(state.files, state.schedule.selectedDate, win);
+    const ok = await openAnnotatedSheets(state.files, state.schedule.selectedDate, overlay);
+    if (ok) toast('Sheets ready — check the print dialog');
+  } catch (err) {
+    toast(`Could not prepare sheets: ${err && err.message ? err.message : err}`);
   } finally {
+    overlay.close();
     btn.disabled = false;
   }
 }
