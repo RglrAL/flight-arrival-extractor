@@ -10,7 +10,19 @@
 
 import { formatDisplayDate } from './normalize.js';
 import { printHtml } from './exports.js';
-import { terminalFor } from './ui-data.js';
+import { terminalFor, tdFromFileName } from './ui-data.js';
+
+// Summary "ink" colours (print is always on white paper). Terminal is
+// double-encoded — the T1/T2 label carries the information, colour just
+// makes the split scannable; lines with no known terminal stay neutral.
+const INK = {
+  head: '#b02a37',     // date + totals (red, like the pen original)
+  td: '#334155',       // tour director line
+  T1: '#047857',       // Terminal 1 flights — green
+  T2: '#1d4ed8',       // Terminal 2 flights — blue
+  neutral: '#334155',  // unknown terminal — no colour claim
+  warn: '#8a5a00',
+};
 
 /**
  * Per-file summary of a selected date, from that file's validated records.
@@ -52,28 +64,35 @@ export function rectIntersectsAny(rect, rects, margin = 0) {
 }
 
 /** Compute the summary block's lines, fonts and box size for a page height H. */
-function layoutSummary(ctx, H, summary, selectedDate) {
+function layoutSummary(ctx, H, summary, selectedDate, tdName) {
   const showCity = new Set(summary.flights.map((f) => f.arrivalCity ?? '')).size > 1;
   const lines = [];
-  lines.push({ text: formatDisplayDate(selectedDate), color: '#b02a37', bold: true });
+  lines.push({ text: formatDisplayDate(selectedDate), color: INK.head, bold: true });
+  if (tdName) {
+    lines.push({ text: `TD: ${tdName}`, color: INK.td, bold: true });
+  }
   if (summary.flights.length === 0) {
-    lines.push({ text: 'No arrivals this date in this report', color: '#1d4ed8', bold: false });
+    lines.push({ text: 'No arrivals this date in this report', color: INK.T2, bold: false });
   } else {
     const termCounts = { T1: 0, T2: 0 };
     for (const f of summary.flights) {
       const city = showCity && f.arrivalCity ? `  (${f.arrivalCity})` : '';
       const term = terminalFor(f.flightNumber, f.arrivalCity);
       if (term) termCounts[term] += f.count;
-      lines.push({ text: `${f.time}   ${f.flightNumber}${city}   × ${f.count}${term ? `   ${term}` : ''}`, color: '#1d4ed8', bold: true });
+      lines.push({
+        text: `${f.time}   ${f.flightNumber}${city}   × ${f.count}${term ? `   ${term}` : ''}`,
+        color: term ? INK[term] : INK.neutral,
+        bold: true,
+      });
     }
     const both = termCounts.T1 > 0 && termCounts.T2 > 0;
     lines.push({
       text: `Total: ${summary.total} passenger${summary.total === 1 ? '' : 's'}${both ? `  ·  T1 ${termCounts.T1} · T2 ${termCounts.T2}` : ''}`,
-      color: '#b02a37', bold: true,
+      color: INK.head, bold: true,
     });
   }
   if (summary.incomplete > 0) {
-    lines.push({ text: `⚠ +${summary.incomplete} dated this day, no flight on row`, color: '#8a5a00', bold: false });
+    lines.push({ text: `⚠ +${summary.incomplete} dated this day, no flight on row`, color: INK.warn, bold: false });
   }
 
   // Split into columns when long, so the block stays shallow.
@@ -153,7 +172,7 @@ function textRectsInViewport(textContent, viewport) {
  * exactly like ink over the header).
  * Returns { canvas, mode: 'overlay' | null }.
  */
-async function renderAnnotatedPage(page, summary, selectedDate, isFirst) {
+async function renderAnnotatedPage(page, summary, selectedDate, isFirst, tdName = null) {
   const viewport = page.getViewport({ scale: 2 });
   const pageCanvas = document.createElement('canvas');
   pageCanvas.width = Math.floor(viewport.width);
@@ -164,7 +183,7 @@ async function renderAnnotatedPage(page, summary, selectedDate, isFirst) {
 
   const W = pageCanvas.width;
   const H = pageCanvas.height;
-  const L = layoutSummary(pctx, H, summary, selectedDate);
+  const L = layoutSummary(pctx, H, summary, selectedDate, tdName);
 
   // Overlay spot: top-right header area, like the handwritten notes. A few
   // candidate positions are tried to find a spot clear of printed text; when
@@ -215,7 +234,7 @@ export async function openAnnotatedSheets(files, selectedDate, ui = {}) {
       if (ui.cancelled?.()) return false;
       ui.status?.(`Rendering ${f.name} — page ${p} of ${f.doc.numPages}…`);
       const page = await f.doc.getPage(p);
-      const { canvas } = await renderAnnotatedPage(page, summary, selectedDate, p === 1);
+      const { canvas } = await renderAnnotatedPage(page, summary, selectedDate, p === 1, tdFromFileName(f.name));
       imgs.push({
         src: canvas.toDataURL('image/jpeg', 0.85),
         landscape: canvas.width > canvas.height,

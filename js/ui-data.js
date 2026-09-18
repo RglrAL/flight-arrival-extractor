@@ -37,6 +37,18 @@ export function shortSourceLabel(fileName) {
 }
 
 /**
+ * Tour Director name — present only in the report's filename, e.g.
+ * "TBBRSD26 20I26a TD James Creegan .pdf" → "James Creegan".
+ * Filenames from these operators contain odd unicode spaces; \s covers them.
+ * Returns null when no TD token is found (nothing is guessed).
+ */
+export function tdFromFileName(fileName) {
+  const normalized = String(fileName || '').replace(/\s+/g, ' ').trim();
+  const m = normalized.match(/\bTD\s+(.+?)\s*(?:\.pdf)?\s*$/i);
+  return m ? m[1].trim() : null;
+}
+
+/**
  * Dublin Airport terminal by operating-airline prefix. EDITABLE — Alan
  * should correct any assignment that doesn't match current daa practice.
  * An airline in neither set gets NO terminal shown (never guessed) —

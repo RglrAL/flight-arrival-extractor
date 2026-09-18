@@ -138,9 +138,12 @@ export function openPrintView(schedule) {
   const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const groupsHtml = schedule.groups.map((g) => {
     const term = terminalFor(g.flightNumber, g.arrivalCity);
+    const termHtml = term
+      ? ` — <span style="color:${term === 'T1' ? '#047857' : '#1d4ed8'}">${term}</span>`
+      : '';
     return `
     <section class="flight">
-      <h2>${esc(g.time)} — ${esc(g.flightNumber)}${term ? ` — ${term}` : ''}${cities.length !== 1 && g.arrivalCity ? ` (${esc(g.arrivalCity)})` : ''}</h2>
+      <h2>${esc(g.time)} — ${esc(g.flightNumber)}${termHtml}${cities.length !== 1 && g.arrivalCity ? ` (${esc(g.arrivalCity)})` : ''}</h2>
       <ul>${g.passengers.map((p) => `<li>${esc(p.passengerName)}</li>`).join('')}</ul>
     </section>`;
   }).join('');

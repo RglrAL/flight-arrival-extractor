@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dateHistogram, shortChipDate, shortSourceLabel, reviewIssueCount, terminalFor } from '../js/ui-data.js';
+import { dateHistogram, shortChipDate, shortSourceLabel, reviewIssueCount, terminalFor, tdFromFileName } from '../js/ui-data.js';
 
 test('dateHistogram counts per date, sorted chronologically — never by count', () => {
   const recs = [
@@ -34,6 +34,15 @@ test('terminalFor maps Dublin airlines; never guesses unknowns or other cities',
   assert.equal(terminalFor('SQ/2170', 'Dublin'), null); // codeshare/unknown → no guess
   assert.equal(terminalFor('EI/122', 'Shannon'), null); // mapping is Dublin-only
   assert.equal(terminalFor(null, 'Dublin'), null);
+});
+
+test('tdFromFileName extracts the Tour Director from the report filename', () => {
+  assert.equal(tdFromFileName('TBBRSD26 20I26a TD James Creegan .pdf'), 'James Creegan');
+  assert.equal(tdFromFileName('IBB90626 20I26a TD Ann Ellard .pdf'), 'Ann Ellard');
+  // odd unicode whitespace, as in the real files
+  assert.equal(tdFromFileName('BIBRED26  20I26a  TD Michelle Worthington .pdf'), 'Michelle Worthington');
+  assert.equal(tdFromFileName('TBIREX26 20I26a  TD Emma Burns .pdf'), 'Emma Burns');
+  assert.equal(tdFromFileName('random-report.pdf'), null); // no TD token → nothing guessed
 });
 
 test('reviewIssueCount matches the review panel scope', () => {
