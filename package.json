@@ -1,0 +1,14 @@
+{
+  "name": "flight-arrival-extractor",
+  "version": "1.0.0",
+  "description": "Extracts flight arrival schedules from Passenger Arrival Details PDFs — entirely in the browser.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "pdfjs-dist": "4.10.38",
+    "xlsx": "0.18.5"
+  }
+}

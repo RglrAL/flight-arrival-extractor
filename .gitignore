@@ -12,3 +12,6 @@ Thumbs.db
 # Node
 node_modules/
 npm-debug.log*
+
+# Local tool settings
+.claude/
