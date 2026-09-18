@@ -8,6 +8,7 @@ import { toPassengerRecords } from './validate.js';
 import { buildSchedule } from './schedule.js';
 import { formatDisplayDate, weekdayOf } from './normalize.js';
 import { exportExcel, exportCsv, openPrintView } from './exports.js';
+import { openAnnotatedSheets } from './sheetprint.js';
 import { renderRecordPreview } from './preview.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('../vendor/pdfjs/pdf.worker.min.mjs', import.meta.url).href;
@@ -204,6 +205,7 @@ function renderResults() {
       <button id="xlsxBtn" class="secondary">Export Excel</button>
       <button id="csvBtn" class="secondary">Export CSV</button>
       <button id="printBtn" class="secondary">Print / PDF</button>
+      <button id="sheetsBtn" class="secondary" title="Print each original report with its flight summary added at the top">Print sheets + summary</button>
       <button id="auditBtn" class="secondary">View extracted data</button>
     </div>
     <div id="audit" class="audit" hidden></div>`;
@@ -211,6 +213,13 @@ function renderResults() {
   $('xlsxBtn').addEventListener('click', () => exportExcel(s));
   $('csvBtn').addEventListener('click', () => exportCsv(s));
   $('printBtn').addEventListener('click', () => openPrintView(s));
+  $('sheetsBtn').addEventListener('click', () => {
+    // The window must be opened synchronously in the click, before the async
+    // page rendering, or popup blockers will eat it.
+    const win = window.open('', '_blank');
+    win.document.write('<p style="font-family:sans-serif;padding:2rem">Preparing sheets…</p>');
+    openAnnotatedSheets(state.files, s.selectedDate, win);
+  });
   $('auditBtn').addEventListener('click', toggleAudit);
   el.querySelectorAll('[data-preview]').forEach((b) => {
     b.addEventListener('click', () => showPreview(b.dataset.preview));
