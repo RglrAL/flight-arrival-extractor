@@ -169,19 +169,12 @@ function textItemsInViewport(textContent, viewport) {
 }
 
 /**
- * Placement for "TD: <name>", centered above the report's own "Passenger
- * Arrival Details" title (located from the page's text coordinates; falls
- * back to a fixed header position when the title isn't found). Computed
- * before the summary box so the box can avoid it.
+ * Placement for "TD: <name>", centered at the very top of the page (small
+ * gap from the edge). Computed before the summary box so the box avoids it.
  */
-function tdPlacement(ctx, W, H, tdName, textItems) {
+function tdPlacement(ctx, W, H, tdName) {
   const fs = Math.max(16, Math.round(H * 0.024));
-  // The big centered title (the top-left corner repeats the same words in
-  // small print — pick the widest occurrence).
-  const title = textItems
-    .filter((t) => t.str.trim() === 'Passenger Arrival Details')
-    .sort((a, b) => b.rect.w - a.rect.w)[0];
-  const baselineY = title ? Math.max(fs + 6, title.rect.y - Math.round(fs * 0.55)) : Math.round(H * 0.07);
+  const baselineY = Math.round(H * 0.012) + fs;
   ctx.save();
   ctx.font = `600 ${fs}px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif`;
   const text = `TD: ${tdName}`;
@@ -213,6 +206,76 @@ function drawTd(ctx, W, td) {
 }
 
 /**
+ * Highlighter over the table rows whose own Date of Arrival matches the
+ * selected date. 'multiply' blending keeps the printed text crisp under the
+ * yellow, exactly like a real highlighter pen.
+ */
+function drawRowHighlights(ctx, viewport, pdfBoxes) {
+  if (pdfBoxes.length === 0) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.fillStyle = '#ffe75e';
+  for (const b of pdfBoxes) {
+    const [ax0, ay0, ax1, ay1] = viewport.convertToViewportRectangle([b.x, b.y, b.x + b.w, b.y + b.h]);
+    ctx.fillRect(Math.min(ax0, ax1) - 3, Math.min(ay0, ay1) - 2, Math.abs(ax1 - ax0) + 6, Math.abs(ay1 - ay0) + 4);
+  }
+  ctx.restore();
+}
+
+/**
+ * 2-column × 3-row handwriting grid below the "Passenger Arrival Details"
+ * heading: pickup times on the left, wide blank cells on the right for
+ * hand-written figures. Placed between the title and the Operating Product
+ * Code line, shifted left when the summary box occupies the centre.
+ */
+function drawPickupGrid(ctx, W, H, textItems, boxRect) {
+  const title = textItems
+    .filter((t) => t.str.trim() === 'Passenger Arrival Details')
+    .sort((a, b) => b.rect.w - a.rect.w)[0];
+  const titleBottom = title ? title.rect.y + title.rect.h : Math.round(H * 0.14);
+  const op = textItems.find((t) => t.str.trim().startsWith('Operating Product Code'));
+  const opTop = op ? op.rect.y : Math.round(H * 0.27);
+
+  const yTop = titleBottom + Math.round(H * 0.012);
+  const availH = opTop - yTop - 8;
+  const rowH = Math.max(26, Math.min(48, Math.floor(availH / 3)));
+  const gridH = rowH * 3;
+  const labelW = Math.round(W * 0.075);
+  const writeW = Math.round(W * 0.17);
+  const gridW = labelW + writeW;
+
+  let gx = (title ? title.rect.x + title.rect.w / 2 : W / 2) - gridW / 2;
+  // Slide left if the summary box reaches into the centre of the header.
+  if (boxRect && rectIntersectsAny({ x: gx, y: yTop, w: gridW, h: gridH }, [boxRect], 8)) {
+    gx = boxRect.x - gridW - 14;
+  }
+  gx = Math.max(gx, Math.round(W * 0.22)); // stay clear of the letterhead
+
+  const fs = Math.round(rowH * 0.42);
+  ctx.save();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(gx, yTop, gridW, gridH);
+  ctx.strokeStyle = INK.td;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(gx, yTop, gridW, gridH);
+  ctx.beginPath();
+  ctx.moveTo(gx + labelW, yTop);
+  ctx.lineTo(gx + labelW, yTop + gridH);
+  for (let r = 1; r < 3; r++) {
+    ctx.moveTo(gx, yTop + rowH * r);
+    ctx.lineTo(gx + gridW, yTop + rowH * r);
+  }
+  ctx.stroke();
+  ctx.font = `600 ${fs}px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif`;
+  ctx.fillStyle = INK.td;
+  ctx.textAlign = 'left';
+  ['8:30am', '11am', '1pm'].forEach((label, r) => {
+    ctx.fillText(label, gx + Math.round(fs * 0.6), yTop + rowH * r + Math.round(rowH * 0.62));
+  });
+  ctx.restore();
+}
+
+/**
  * Render one page; on page 1 the summary is drawn ONTO the header area of
  * the sheet itself — like the original handwritten workflow. Candidate
  * positions are tried against the page's text coordinates to pick the
@@ -221,20 +284,21 @@ function drawTd(ctx, W, td) {
  * exactly like ink over the header).
  * Returns { canvas, mode: 'overlay' | null }.
  */
-async function renderAnnotatedPage(page, summary, selectedDate, isFirst, tdName = null) {
+async function renderAnnotatedPage(page, summary, selectedDate, isFirst, tdName = null, highlightBoxes = []) {
   const viewport = page.getViewport({ scale: 2 });
   const pageCanvas = document.createElement('canvas');
   pageCanvas.width = Math.floor(viewport.width);
   pageCanvas.height = Math.floor(viewport.height);
   const pctx = pageCanvas.getContext('2d');
   await page.render({ canvasContext: pctx, viewport }).promise;
+  drawRowHighlights(pctx, viewport, highlightBoxes);
   if (!isFirst) return { canvas: pageCanvas, mode: null };
 
   const W = pageCanvas.width;
   const H = pageCanvas.height;
   const textItems = textItemsInViewport(await page.getTextContent(), viewport);
   const textRects = textItems.map((t) => t.rect);
-  const td = tdName ? tdPlacement(pctx, W, H, tdName, textItems) : null;
+  const td = tdName ? tdPlacement(pctx, W, H, tdName) : null;
 
   // The box lives between the TD line and the table's own header row.
   const tableHeader = textItems.find((t) => t.str.trim() === 'Passenger Name');
@@ -258,8 +322,10 @@ async function renderAnnotatedPage(page, summary, selectedDate, isFirst, tdName 
       break;
     }
   }
+  const boxRect = { x: x0, y: y0, w: L.boxW, h: L.boxH };
   drawSummaryBox(pctx, x0, y0, L);
   if (td) drawTd(pctx, W, td);
+  drawPickupGrid(pctx, W, H, textItems, boxRect);
   return { canvas: pageCanvas, mode: 'overlay' };
 }
 
@@ -292,8 +358,21 @@ export async function openAnnotatedSheets(files, selectedDate, ui = {}) {
     for (let p = 1; p <= f.doc.numPages; p++) {
       if (ui.cancelled?.()) return false;
       ui.status?.(`Rendering ${f.name} — page ${p} of ${f.doc.numPages}…`);
+      // Rows on this page whose own date matches → yellow highlighter.
+      const highlights = (f.records || [])
+        .filter((r) => r.sourcePage === p && r.arrivalDate === selectedDate && r.geometry?.cellBoxes)
+        .map((r) => {
+          const boxes = Object.values(r.geometry.cellBoxes);
+          if (boxes.length === 0) return null;
+          const x0 = Math.min(...boxes.map((b) => b.x));
+          const x1 = Math.max(...boxes.map((b) => b.x + b.w));
+          const y0 = Math.min(...boxes.map((b) => b.y));
+          const y1 = Math.max(...boxes.map((b) => b.y + b.h));
+          return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+        })
+        .filter(Boolean);
       const page = await f.doc.getPage(p);
-      const { canvas } = await renderAnnotatedPage(page, summary, selectedDate, p === 1, tdFromFileName(f.name));
+      const { canvas } = await renderAnnotatedPage(page, summary, selectedDate, p === 1, tdFromFileName(f.name), highlights);
       imgs.push({
         src: canvas.toDataURL('image/jpeg', 0.85),
         landscape: canvas.width > canvas.height,
