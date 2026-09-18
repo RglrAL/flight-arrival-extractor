@@ -1,0 +1,14 @@
+# PRIVACY: real passenger data must NEVER be committed to this (public) repo.
+# The app processes PDFs entirely in the browser; no passenger data belongs in git.
+passenger travel info sheets/
+brief/
+*.pdf
+!tests/fixtures/*.pdf
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+npm-debug.log*
