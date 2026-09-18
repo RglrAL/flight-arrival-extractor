@@ -2,6 +2,7 @@
 // Excel uses the vendored SheetJS global (window.XLSX).
 
 import { formatDisplayDate } from './normalize.js';
+import { terminalFor } from './ui-data.js';
 
 /** Flat passenger-level rows in schedule (group) order — brief §21 columns. */
 function flatRows(schedule) {
@@ -12,6 +13,7 @@ function flatRows(schedule) {
         Date: p.arrivalDate,
         Time: p.arrivalTime,
         Flight: p.flightNumber,
+        Terminal: terminalFor(p.flightNumber, p.arrivalCity) || '',
         Passenger: p.passengerName,
         'Booking ID': p.bookingId || '',
         'Arrival City': p.arrivalCity || '',
@@ -29,7 +31,7 @@ function csvEscape(v) {
 
 export function buildCsv(schedule) {
   const rows = flatRows(schedule);
-  const headers = ['Date', 'Time', 'Flight', 'Passenger', 'Booking ID', 'Arrival City', 'Source PDF'];
+  const headers = ['Date', 'Time', 'Flight', 'Terminal', 'Passenger', 'Booking ID', 'Arrival City', 'Source PDF'];
   const lines = [headers.join(',')];
   for (const r of rows) lines.push(headers.map((h) => csvEscape(r[h])).join(','));
   return lines.join('\r\n');
@@ -54,13 +56,14 @@ export function exportExcel(schedule) {
 
   // Sheet 1 — flat passenger list.
   const ws1 = XLSX.utils.json_to_sheet(flatRows(schedule));
-  ws1['!cols'] = [{ wch: 11 }, { wch: 6 }, { wch: 9 }, { wch: 34 }, { wch: 18 }, { wch: 12 }, { wch: 38 }];
+  ws1['!cols'] = [{ wch: 11 }, { wch: 6 }, { wch: 9 }, { wch: 8 }, { wch: 34 }, { wch: 18 }, { wch: 12 }, { wch: 38 }];
   XLSX.utils.book_append_sheet(wb, ws1, 'Passengers');
 
   // Sheet 2 — presentation-friendly grouped schedule.
   const grouped = schedule.groups.map((g) => ({
     Time: g.time,
     Flight: g.flightNumber,
+    Terminal: terminalFor(g.flightNumber, g.arrivalCity) || '',
     City: g.arrivalCity || '',
     Passengers: g.passengers.map((p) => p.passengerName).join('; '),
     Count: g.passengers.length,
@@ -133,11 +136,14 @@ export function openPrintView(schedule) {
   const cityLine = cities.length === 1 ? `${cities[0].toUpperCase()} ARRIVALS` : 'ARRIVALS';
 
   const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const groupsHtml = schedule.groups.map((g) => `
+  const groupsHtml = schedule.groups.map((g) => {
+    const term = terminalFor(g.flightNumber, g.arrivalCity);
+    return `
     <section class="flight">
-      <h2>${esc(g.time)} — ${esc(g.flightNumber)}${cities.length !== 1 && g.arrivalCity ? ` (${esc(g.arrivalCity)})` : ''}</h2>
+      <h2>${esc(g.time)} — ${esc(g.flightNumber)}${term ? ` — ${term}` : ''}${cities.length !== 1 && g.arrivalCity ? ` (${esc(g.arrivalCity)})` : ''}</h2>
       <ul>${g.passengers.map((p) => `<li>${esc(p.passengerName)}</li>`).join('')}</ul>
-    </section>`).join('');
+    </section>`;
+  }).join('');
 
   const incompleteHtml = schedule.incompleteOnDate.length === 0 ? '' : `
     <section class="flight incomplete">

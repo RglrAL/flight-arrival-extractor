@@ -8,7 +8,7 @@ import { pageFromPdfjsTextContent, extractRowsFromPages } from './extractor.js';
 import { toPassengerRecords } from './validate.js';
 import { buildSchedule } from './schedule.js';
 import { formatDisplayDate, weekdayOf } from './normalize.js';
-import { dateHistogram, shortChipDate, shortSourceLabel, reviewIssueCount } from './ui-data.js';
+import { dateHistogram, shortChipDate, shortSourceLabel, reviewIssueCount, terminalFor } from './ui-data.js';
 import { exportExcel, exportCsv, openPrintView } from './exports.js';
 import { openAnnotatedSheets } from './sheetprint.js';
 import { renderRecordPreview } from './preview.js';
@@ -448,6 +448,7 @@ function renderResults() {
         <span class="time">${esc(g.time)}</span>
         <button class="flighthead" data-insp="${i}" aria-expanded="false" aria-controls="insp-${i}" title="Show flight details">
           <span class="flightno">${esc(g.flightNumber)}</span>
+          ${terminalFor(g.flightNumber, g.arrivalCity) ? `<span class="terminal">${terminalFor(g.flightNumber, g.arrivalCity)}</span>` : ''}
           ${cities.length !== 1 && g.arrivalCity ? `<span class="city">${esc(g.arrivalCity)}</span>` : ''}
           ${uniformSource ? sourceMeta(g.passengers[0]) : ''}
           <span class="chev">▾</span>

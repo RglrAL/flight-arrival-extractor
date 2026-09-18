@@ -37,6 +37,29 @@ export function shortSourceLabel(fileName) {
 }
 
 /**
+ * Dublin Airport terminal by operating-airline prefix. EDITABLE — Alan
+ * should correct any assignment that doesn't match current daa practice.
+ * An airline in neither set gets NO terminal shown (never guessed) —
+ * codeshare flight numbers (e.g. SQ/2170 operated by another carrier)
+ * intentionally fall through unless the marketing prefix is listed.
+ */
+const DUBLIN_T2 = new Set(['EI', 'AA', 'DL', 'UA', 'EK', 'EY']);
+const DUBLIN_T1 = new Set(['FR', 'BA', 'AF', 'KL', 'LH', 'AC', 'WS', 'TS', 'QR', 'IB', 'TK', 'LX', 'SN', 'SK', 'TP', 'AZ', 'LO', 'OS']);
+
+/**
+ * "EI/122" + "Dublin" → "T1" | "T2" | null.
+ * Only applies to Dublin arrivals; unknown airlines return null.
+ */
+export function terminalFor(flightNumber, arrivalCity) {
+  if (!flightNumber) return null;
+  if ((arrivalCity || '').trim().toLowerCase() !== 'dublin') return null;
+  const prefix = String(flightNumber).split('/')[0].trim().toUpperCase();
+  if (DUBLIN_T2.has(prefix)) return 'T2';
+  if (DUBLIN_T1.has(prefix)) return 'T1';
+  return null;
+}
+
+/**
  * Count of entries the review panel will show. Scoped definition of
  * "no issues": zero review-required rows, zero file warnings, zero possible
  * duplicates, zero incomplete-on-date, zero no-date rows. Not a claim of

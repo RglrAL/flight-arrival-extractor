@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dateHistogram, shortChipDate, shortSourceLabel, reviewIssueCount } from '../js/ui-data.js';
+import { dateHistogram, shortChipDate, shortSourceLabel, reviewIssueCount, terminalFor } from '../js/ui-data.js';
 
 test('dateHistogram counts per date, sorted chronologically — never by count', () => {
   const recs = [
@@ -24,6 +24,16 @@ test('shortChipDate formats compactly', () => {
 test('shortSourceLabel takes the report code from the filename', () => {
   assert.equal(shortSourceLabel('TBBRSD26 20I26a TD James Creegan .pdf'), 'TBBRSD26');
   assert.equal(shortSourceLabel('single.pdf'), 'single');
+});
+
+test('terminalFor maps Dublin airlines; never guesses unknowns or other cities', () => {
+  assert.equal(terminalFor('EI/122', 'Dublin'), 'T2');
+  assert.equal(terminalFor('DL/154', 'Dublin'), 'T2');
+  assert.equal(terminalFor('BA/826', 'Dublin'), 'T1');
+  assert.equal(terminalFor('WS/46', 'dublin'), 'T1'); // case-insensitive city
+  assert.equal(terminalFor('SQ/2170', 'Dublin'), null); // codeshare/unknown → no guess
+  assert.equal(terminalFor('EI/122', 'Shannon'), null); // mapping is Dublin-only
+  assert.equal(terminalFor(null, 'Dublin'), null);
 });
 
 test('reviewIssueCount matches the review panel scope', () => {

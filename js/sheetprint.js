@@ -10,6 +10,7 @@
 
 import { formatDisplayDate } from './normalize.js';
 import { printHtml } from './exports.js';
+import { terminalFor } from './ui-data.js';
 
 /**
  * Per-file summary of a selected date, from that file's validated records.
@@ -58,11 +59,18 @@ function layoutSummary(ctx, H, summary, selectedDate) {
   if (summary.flights.length === 0) {
     lines.push({ text: 'No arrivals this date in this report', color: '#1d4ed8', bold: false });
   } else {
+    const termCounts = { T1: 0, T2: 0 };
     for (const f of summary.flights) {
       const city = showCity && f.arrivalCity ? `  (${f.arrivalCity})` : '';
-      lines.push({ text: `${f.time}   ${f.flightNumber}${city}   × ${f.count}`, color: '#1d4ed8', bold: true });
+      const term = terminalFor(f.flightNumber, f.arrivalCity);
+      if (term) termCounts[term] += f.count;
+      lines.push({ text: `${f.time}   ${f.flightNumber}${city}   × ${f.count}${term ? `   ${term}` : ''}`, color: '#1d4ed8', bold: true });
     }
-    lines.push({ text: `Total: ${summary.total} passenger${summary.total === 1 ? '' : 's'}`, color: '#b02a37', bold: true });
+    const both = termCounts.T1 > 0 && termCounts.T2 > 0;
+    lines.push({
+      text: `Total: ${summary.total} passenger${summary.total === 1 ? '' : 's'}${both ? `  ·  T1 ${termCounts.T1} · T2 ${termCounts.T2}` : ''}`,
+      color: '#b02a37', bold: true,
+    });
   }
   if (summary.incomplete > 0) {
     lines.push({ text: `⚠ +${summary.incomplete} dated this day, no flight on row`, color: '#8a5a00', bold: false });
