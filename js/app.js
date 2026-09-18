@@ -1,7 +1,7 @@
-// UI wiring: upload → date → extract → results/review/audit/preview/exports.
-// All processing happens locally in this browser tab; no passenger data
-// leaves the machine. Core engine modules are unchanged — this file is the
-// view layer.
+// UI wiring: setup (upload → date) → operations (schedule, review, audit,
+// preview, exports). All processing happens locally in this browser tab; no
+// passenger data leaves the machine. Core engine modules are unchanged —
+// this file is the view layer.
 
 import * as pdfjs from '../vendor/pdfjs/pdf.min.mjs';
 import { pageFromPdfjsTextContent, extractRowsFromPages } from './extractor.js';
@@ -16,17 +16,113 @@ import { renderRecordPreview } from './preview.js';
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('../vendor/pdfjs/pdf.worker.min.mjs', import.meta.url).href;
 
 const $ = (id) => document.getElementById(id);
+const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 const state = {
   files: [],          // { name, doc, extraction, records, error, pagesRead, pagesTotal, done }
   schedule: null,
-  filesExpanded: false,   // user explicitly re-opened the file manager
+  mode: 'setup',      // 'setup' | 'ops'
+  filesExpanded: false,
   chipsExpanded: false,
   installPrompt: null,
 };
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ---------- Theme (System · Light · Dark) ----------
+
+const THEME_KEY = 'fae-theme';
+const THEME_COLORS = { light: '#f3f6fa', dark: '#10161d' };
+const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+
+function themePref() {
+  try { return localStorage.getItem(THEME_KEY) || 'system'; } catch { return 'system'; }
+}
+
+function applyTheme(pref, animate = false) {
+  const effective = pref === 'system' ? (systemDark.matches ? 'dark' : 'light') : pref;
+  const root = document.documentElement;
+  if (animate && !REDUCED.matches) {
+    root.classList.add('theme-anim');
+    setTimeout(() => root.classList.remove('theme-anim'), 260);
+  }
+  root.dataset.theme = effective;
+  $('themeColorMeta').setAttribute('content', THEME_COLORS[effective]);
+  document.querySelectorAll('#themeCtl [data-theme-opt]').forEach((b) => {
+    b.setAttribute('aria-checked', String(b.dataset.themeOpt === pref));
+  });
+}
+
+function initTheme() {
+  applyTheme(themePref());
+  document.querySelectorAll('#themeCtl [data-theme-opt]').forEach((b) => {
+    b.addEventListener('click', () => {
+      try { localStorage.setItem(THEME_KEY, b.dataset.themeOpt); } catch { /* private mode */ }
+      applyTheme(b.dataset.themeOpt, true);
+    });
+  });
+  systemDark.addEventListener('change', () => {
+    if (themePref() === 'system') applyTheme('system', true);
+  });
+}
+
+// ---------- Motion helpers (large layout transitions, 250–320ms) ----------
+
+function collapseSection(el, done) {
+  if (el.hidden) { done?.(); return; }
+  if (REDUCED.matches) { el.hidden = true; done?.(); return; }
+  el.style.height = `${el.scrollHeight}px`;
+  el.style.overflow = 'hidden';
+  requestAnimationFrame(() => {
+    el.style.transition = 'height 300ms cubic-bezier(0.2,0.7,0.3,1), opacity 300ms cubic-bezier(0.2,0.7,0.3,1)';
+    el.style.height = '0px';
+    el.style.opacity = '0';
+  });
+  el.addEventListener('transitionend', () => {
+    el.hidden = true;
+    el.style.cssText = '';
+    done?.();
+  }, { once: true });
+}
+
+function expandSection(el) {
+  if (!el.hidden) return;
+  el.hidden = false;
+  if (REDUCED.matches) return;
+  const target = el.scrollHeight;
+  el.style.height = '0px';
+  el.style.opacity = '0';
+  el.style.overflow = 'hidden';
+  requestAnimationFrame(() => {
+    el.style.transition = 'height 300ms cubic-bezier(0.2,0.7,0.3,1), opacity 300ms cubic-bezier(0.2,0.7,0.3,1)';
+    el.style.height = `${target}px`;
+    el.style.opacity = '1';
+  });
+  el.addEventListener('transitionend', () => { el.style.cssText = ''; }, { once: true });
+}
+
+// ---------- Setup ⇄ operations mode ----------
+
+function renderCommandBar() {
+  const rows = state.files.reduce((a, f) => a + f.records.length, 0);
+  $('cbFiles').textContent = `${state.files.length} PDF${state.files.length === 1 ? '' : 's'} · ${rows} rows`;
+  $('cbDate').textContent = state.schedule ? formatDisplayDate(state.schedule.selectedDate) : '';
+}
+
+function setMode(mode) {
+  if (state.mode === mode) return;
+  state.mode = mode;
+  const setup = $('setupArea');
+  const bar = $('commandBar');
+  if (mode === 'ops') {
+    renderCommandBar();
+    collapseSection(setup, () => { bar.hidden = false; });
+  } else {
+    bar.hidden = true;
+    expandSection(setup);
+  }
 }
 
 // ---------- Toast ----------
@@ -43,6 +139,7 @@ function toast(msg) {
 // ---------- File loading ----------
 
 async function addFiles(fileList) {
+  setMode('setup');
   // Snapshot: a FileList from an <input> is live and would empty out when
   // the input is cleared while this loop awaits.
   for (const file of Array.from(fileList)) {
@@ -56,7 +153,7 @@ async function addFiles(fileList) {
       pagesRead: 0, pagesTotal: 0, done: false,
     };
     state.files.push(entry);
-    state.filesExpanded = true; // keep the list visible while work is happening
+    state.filesExpanded = true;
     renderFileList();
     try {
       const data = new Uint8Array(await file.arrayBuffer());
@@ -80,7 +177,6 @@ async function addFiles(fileList) {
     renderDateChips();
     updateControls();
   }
-  // Everything parsed: collapse the upload card to its summary line.
   if (state.files.length > 0 && state.files.every((f) => f.done)) {
     state.filesExpanded = false;
     renderFileList();
@@ -151,7 +247,6 @@ function renderFileList() {
     b.addEventListener('click', () => removeFile(b.dataset.remove));
   });
 
-  // Collapsed summary vs full manager.
   const allDone = state.files.length > 0 && state.files.every((f) => f.done);
   const showBody = state.files.length === 0 || state.filesExpanded || !allDone;
   $('uploadBody').hidden = !showBody;
@@ -248,7 +343,8 @@ function extract() {
   state.schedule = buildSchedule(allRecords(), date);
   renderResults();
   updateSteps();
-  $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  setMode('ops');
+  $('results').scrollIntoView({ behavior: REDUCED.matches ? 'auto' : 'smooth', block: 'start' });
 }
 
 function recordById(id) {
@@ -270,6 +366,30 @@ function passengerLine(p, s, showSource = true) {
     <button class="passenger" data-preview="${esc(p.id)}" title="Show this row in the source PDF">${esc(p.passengerName)}</button>
     ${showSource ? sourceMeta(p) : ''}${dup}
   </li>`;
+}
+
+function passengerStatus(p, s) {
+  if (p.reviewRequired) return '<span class="badge badge-warn">Needs review</span>';
+  if (s.duplicateIds.has(p.id)) return '<span class="badge badge-warn">Possible duplicate</span>';
+  return '<span class="badge badge-ok">Ready</span>';
+}
+
+function inspectorHtml(g, s, idx) {
+  const rows = g.passengers.map((p) => `<tr>
+    <td>${esc(p.passengerName)}</td>
+    <td>${esc(p.bookingId ?? '')}</td>
+    <td>${passengerStatus(p, s)}</td>
+    <td class="srcfull" title="${esc(p.sourceFile)}">${esc(p.sourceFile)} · p${p.sourcePage}</td>
+    <td><button class="linklike" data-preview="${esc(p.id)}">View source row</button></td>
+  </tr>`).join('');
+  return `<div class="inspector" id="insp-${idx}" hidden>
+    <div class="inspector-inner">
+      <table>
+        <thead><tr><th>Passenger</th><th>Booking ID</th><th>Status</th><th>Source</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </div>`;
 }
 
 function reviewPanelHtml(s, issueCount) {
@@ -321,39 +441,45 @@ function renderResults() {
 
   const groupsHtml = s.groups.length === 0
     ? '<p class="noresults">No passengers found whose own row matches this date.</p>'
-    : s.groups.map((g) => {
-      // One shared source label in the header when the whole group comes
-      // from the same PDF; per-passenger labels only for mixed groups.
+    : s.groups.map((g, i) => {
       const uniformSource = g.passengers.every((p) => p.sourceFile === g.passengers[0].sourceFile);
       return `
       <div class="flightgroup">
         <span class="time">${esc(g.time)}</span>
-        <span class="flighthead">
+        <button class="flighthead" data-insp="${i}" aria-expanded="false" aria-controls="insp-${i}" title="Show flight details">
           <span class="flightno">${esc(g.flightNumber)}</span>
           ${cities.length !== 1 && g.arrivalCity ? `<span class="city">${esc(g.arrivalCity)}</span>` : ''}
           ${uniformSource ? sourceMeta(g.passengers[0]) : ''}
-        </span>
+          <span class="chev">▾</span>
+        </button>
         <span class="pcount">${g.passengers.length} passenger${g.passengers.length === 1 ? '' : 's'}</span>
         <ul class="passengers">${g.passengers.map((p) => passengerLine(p, s, !uniformSource)).join('')}</ul>
+        ${inspectorHtml(g, s, i)}
       </div>`;
     }).join('');
 
   el.innerHTML = `
-    <div class="results-head">
-      <h2>${esc(display)}</h2>
-      <p class="results-sub">${esc(cityLine)}</p>
+    <div class="hero">
+      <div class="hero-main">
+        <div class="hero-date">
+          <h2>${esc(display)}</h2>
+          <p class="results-sub">${esc(cityLine)}</p>
+        </div>
+        <div class="hero-stats totals">
+          <div class="hstat"><strong>${s.totals.flights}</strong><span>flight${s.totals.flights === 1 ? '' : 's'}</span></div>
+          <div class="hstat"><strong>${s.totals.passengers}</strong><span>passenger${s.totals.passengers === 1 ? '' : 's'}</span>${dupCount > 0 ? `<span class="statnote warn">incl. ${dupCount} possible duplicates</span>` : ''}</div>
+          <div class="hstat"><strong>${state.files.length}</strong><span>PDF${state.files.length === 1 ? '' : 's'}</span></div>
+          <div class="hstat ${issueCount === 0 ? 'is-ok' : 'is-warn'}"><strong>${issueCount}</strong><span>review issue${issueCount === 1 ? '' : 's'}</span></div>
+        </div>
+      </div>
     </div>
-    <div class="statstrip totals">
-      <span class="statchip"><strong>${s.totals.flights}</strong> flight${s.totals.flights === 1 ? '' : 's'}</span>
-      <span class="statchip"><strong>${s.totals.passengers}</strong> passenger${s.totals.passengers === 1 ? '' : 's'}${dupCount > 0 ? ` <span class="warn">(incl. ${dupCount} possible duplicates)</span>` : ''}</span>
-      <span class="statchip"><strong>${state.files.length}</strong> PDF${state.files.length === 1 ? '' : 's'}</span>
-      <span class="statchip ${issueCount === 0 ? 'is-ok' : 'is-warn'}"><strong>${issueCount}</strong> review issue${issueCount === 1 ? '' : 's'}</span>
-    </div>
-    ${reviewPanelHtml(s, issueCount)}
     <div id="toolbarSentinel"></div>
-    <div class="toolbar" id="toolbar">
+    <div class="hero-actions" id="toolbar">
       <button id="printBtn" class="btn btn-primary">Print schedule</button>
-      <button id="sheetsBtn" class="btn" title="Original passenger sheets with the extracted arrival summary added above">Print sheets + summary</button>
+      <button id="sheetsBtn" class="btn" title="Original passenger sheets with the extracted arrival summary added above">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm8 1.5V8h4.5L14 3.5ZM7 12h10v1.5H7V12Zm0 3.5h10V17H7v-1.5Z"/></svg>
+        Print sheets + summary
+      </button>
       <div class="menuwrap">
         <button id="exportMenuBtn" class="btn" aria-haspopup="true" aria-expanded="false" aria-controls="exportMenu">Export ▾</button>
         <div class="menu" id="exportMenu" role="menu" hidden>
@@ -363,8 +489,9 @@ function renderResults() {
       </div>
       <span class="spacer"></span>
       <button id="auditBtn" class="btn-quiet" aria-expanded="false" aria-controls="audit">Audit data</button>
-      <p class="toolbar-note">“Print sheets + summary” reprints each original report with its arrival summary added at the top.</p>
+      <p class="toolbar-note">“Print sheets + summary” — the original sheets with the arrival summary added above the table.</p>
     </div>
+    ${reviewPanelHtml(s, issueCount)}
     <div class="board">${groupsHtml}</div>
     <div id="auditWrap" hidden>
       <div class="drawer-backdrop" id="auditBackdrop"></div>
@@ -378,7 +505,7 @@ function renderResults() {
       </aside>
     </div>`;
 
-  $('printBtn').addEventListener('click', () => openPrintView(s));
+  $('printBtn').addEventListener('click', () => { openPrintView(s); toast('Print dialog opening…'); });
   $('sheetsBtn').addEventListener('click', onPrintSheets);
   $('xlsxBtn').addEventListener('click', () => { exportExcel(s); closeExportMenu(); toast(`arrivals-${s.selectedDate}.xlsx downloaded`); });
   $('csvBtn').addEventListener('click', () => { exportCsv(s); closeExportMenu(); toast(`arrivals-${s.selectedDate}.csv downloaded`); });
@@ -393,10 +520,18 @@ function renderResults() {
     reviewToggle.addEventListener('click', () => {
       const body = $('reviewBody');
       const open = body.hidden;
-      body.hidden = !open;
+      if (open) expandSection(body); else collapseSection(body);
       reviewToggle.setAttribute('aria-expanded', String(open));
     });
   }
+  el.querySelectorAll('[data-insp]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const insp = $(`insp-${b.dataset.insp}`);
+      const open = insp.hidden;
+      if (open) expandSection(insp); else collapseSection(insp);
+      b.setAttribute('aria-expanded', String(open));
+    });
+  });
   el.querySelectorAll('[data-preview]').forEach((b) => {
     b.addEventListener('click', () => showPreview(b.dataset.preview));
   });
@@ -410,12 +545,12 @@ function renderResults() {
     b.addEventListener('click', () => openAudit());
   });
 
-  // Zero-jump sticky shadow: the toolbar is position:sticky (always in flow);
-  // the sentinel only toggles its elevated look.
+  // The action row is position:sticky (always in flow — zero layout jump);
+  // the sentinel only toggles its pinned look.
   const sentinel = $('toolbarSentinel');
   new IntersectionObserver(([e]) => {
     $('toolbar').classList.toggle('is-stuck', !e.isIntersecting);
-  }, { rootMargin: '-57px 0px 0px 0px' }).observe(sentinel);
+  }, { rootMargin: '-55px 0px 0px 0px' }).observe(sentinel);
 }
 
 // ---------- Export menu ----------
@@ -518,10 +653,21 @@ async function showPreview(id) {
   dlg.showModal();
   const canvas = $('previewCanvas');
   const wrap = $('previewScroll');
+  const hl = $('previewHighlight');
+  hl.hidden = true;
+  hl.classList.remove('is-visible');
   wrap.classList.add('is-loading');
   try {
     const info = await renderRecordPreview(file.doc, record, canvas, Math.min(900, wrap.clientWidth - 8));
-    if (info) {
+    wrap.classList.remove('is-loading');
+    if (info && info.rect) {
+      hl.style.left = `${info.rect.x}px`;
+      hl.style.top = `${info.rect.y}px`;
+      hl.style.width = `${info.rect.w}px`;
+      hl.style.height = `${info.rect.h}px`;
+      hl.hidden = false;
+      // Highlight fades in just after the page appears.
+      setTimeout(() => hl.classList.add('is-visible'), REDUCED.matches ? 0 : 160);
       wrap.scrollTop = Math.max(0, info.scrollY * canvas.clientHeight - wrap.clientHeight / 2);
     }
   } finally {
@@ -537,17 +683,36 @@ function showSheetsProgress(files) {
   el.className = 'progress-overlay';
   el.innerHTML = `
     <div class="progresscard" role="alertdialog" aria-label="Preparing arrival sheets" aria-live="polite">
-      <h3>Preparing arrival sheets</h3>
+      <h3 id="spTitle">Preparing arrival sheets</h3>
       <p class="progress-status" id="spStatus">Starting…</p>
       <div class="progress-bar"><span id="spBar"></span></div>
       <ul class="progress-files">${files.map((f, i) => `<li id="spFile${i}"><span class="tick">·</span><span class="pf-name" title="${esc(f.name)}">${esc(f.name)}</span></li>`).join('')}</ul>
       <button class="btn" id="spCancel">Cancel</button>
+      <div class="pv-wrap">
+        <img class="pv-thumb" id="spThumb" alt="Current sheet preview">
+        <p class="pv-caption">Live preview</p>
+      </div>
     </div>`;
   document.body.appendChild(el);
   el.querySelector('#spCancel').addEventListener('click', () => { cancelled = true; });
   return {
     status(t) { const s = el.querySelector('#spStatus'); if (s) s.textContent = t; },
-    bar(f) { const b = el.querySelector('#spBar'); if (b) b.style.width = `${Math.round(f * 100)}%`; },
+    bar(f) {
+      const b = el.querySelector('#spBar');
+      if (b) b.style.width = `${Math.round(f * 100)}%`;
+      if (f >= 1) {
+        const title = el.querySelector('#spTitle');
+        if (title && !title.dataset.done) {
+          title.dataset.done = '1';
+          title.innerHTML = 'Sheets ready <svg class="done-check" viewBox="0 0 52 52" style="width:18px;height:18px;vertical-align:-3px"><path fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" d="M12 27l9 9 19-19"/></svg>';
+        }
+      }
+    },
+    // Replace-only: one <img>, its src swapped per page — thumbnails never accumulate.
+    thumbnail(dataUrl) {
+      const img = el.querySelector('#spThumb');
+      if (img) { img.src = dataUrl; img.classList.add('has-img'); }
+    },
     fileDone(i) {
       const li = el.querySelector(`#spFile${i}`);
       if (li) { li.classList.add('done'); li.querySelector('.tick').textContent = '✓'; }
@@ -576,6 +741,8 @@ async function onPrintSheets() {
 // ---------- Init ----------
 
 function init() {
+  initTheme();
+
   const drop = $('dropzone');
   const input = $('fileInput');
   drop.addEventListener('click', () => input.click());
@@ -599,6 +766,19 @@ function init() {
   $('arrivalDate').addEventListener('change', () => { updateControls(); renderDateChips(); });
   $('extractBtn').addEventListener('click', extract);
   $('previewClose').addEventListener('click', () => $('previewDialog').close());
+
+  // Command bar (operations mode)
+  $('cbAdd').addEventListener('click', () => $('fileInput').click());
+  $('cbChange').addEventListener('click', () => {
+    setMode('setup');
+    $('dateCard').scrollIntoView({ behavior: REDUCED.matches ? 'auto' : 'smooth', block: 'center' });
+  });
+  $('cbFiles').addEventListener('click', () => {
+    state.filesExpanded = true;
+    renderFileList();
+    setMode('setup');
+  });
+  $('cbReextract').addEventListener('click', extract);
 
   for (const [btnId, dlgId] of [['helpBtn', 'helpDialog'], ['aboutBtn', 'aboutDialog']]) {
     $(btnId).addEventListener('click', () => $(dlgId).showModal());

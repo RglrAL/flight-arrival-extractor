@@ -7,8 +7,17 @@
   <meta name="description" content="Extract flight arrival schedules from Passenger Arrival Details PDFs — entirely in your browser. No data leaves your device.">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <meta name="theme-color" content="#f3f6fa" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#10161d" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f3f6fa" id="themeColorMeta">
+  <script>
+    // Stamp the effective theme before CSS applies — prevents a flash when a
+    // saved preference differs from the OS scheme.
+    (function () {
+      var pref = 'system';
+      try { pref = localStorage.getItem('fae-theme') || 'system'; } catch (e) {}
+      var sys = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.dataset.theme = pref === 'system' ? sys : pref;
+    })();
+  </script>
   <link rel="preload" href="vendor/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -25,11 +34,26 @@
         <button id="installBtn" class="ghostbtn" hidden>Install app</button>
         <button id="helpBtn" class="ghostbtn">Help</button>
         <button id="aboutBtn" class="ghostbtn">About</button>
+        <div class="segctl" id="themeCtl" role="radiogroup" aria-label="Colour theme">
+          <button data-theme-opt="system" role="radio" aria-checked="true">System</button>
+          <button data-theme-opt="light" role="radio" aria-checked="false">Light</button>
+          <button data-theme-opt="dark" role="radio" aria-checked="false">Dark</button>
+        </div>
       </nav>
     </div>
   </header>
 
   <main id="main" class="shell">
+    <div class="commandbar" id="commandBar" hidden>
+      <button class="cb-provenance" id="cbFiles" title="Show files"></button>
+      <span class="cb-date" id="cbDate"></span>
+      <span class="spacer"></span>
+      <button class="btn-quiet" id="cbAdd">+ Add PDFs</button>
+      <button class="btn-quiet" id="cbChange">Change date</button>
+      <button class="btn-quiet" id="cbReextract">Re-extract</button>
+    </div>
+
+    <div id="setupArea">
     <ol class="steps" aria-label="Workflow steps">
       <li class="step is-active" id="stepUpload"><span class="step-num" aria-hidden="true">1</span><span>Upload</span></li>
       <li class="step" id="stepDate"><span class="step-num" aria-hidden="true">2</span><span>Select date</span></li>
@@ -65,6 +89,7 @@
         <button id="extractBtn" class="primary" disabled>Extract arrivals</button>
       </section>
     </div>
+    </div>
 
     <section id="results" class="results" aria-live="polite"></section>
   </main>
@@ -81,7 +106,10 @@
       <button id="previewClose" class="ghostbtn">✕ Close</button>
     </div>
     <div id="previewScroll" class="previewscroll">
-      <canvas id="previewCanvas"></canvas>
+      <div class="previewinner">
+        <canvas id="previewCanvas"></canvas>
+        <div id="previewHighlight" class="preview-highlight" hidden></div>
+      </div>
     </div>
   </dialog>
 

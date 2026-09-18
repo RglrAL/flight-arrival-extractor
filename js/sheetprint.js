@@ -199,8 +199,10 @@ async function renderAnnotatedPage(page, summary, selectedDate, isFirst) {
  *
  * files: [{ name, doc, records }] (pdf.js doc); selectedDate: ISO.
  * ui (optional): { status(text), bar(fraction), fileDone(index),
- * cancelled() → bool } — drives the in-page progress overlay; returning
- * true from cancelled() aborts cleanly.
+ * thumbnail(dataUrl), cancelled() → bool } — drives the in-page progress
+ * overlay; returning true from cancelled() aborts cleanly. thumbnail
+ * receives a small (~240px) preview of each page as it renders; callers
+ * should REPLACE the previous image, never accumulate.
  * Resolves true when the print dialog was opened, false when cancelled.
  */
 export async function openAnnotatedSheets(files, selectedDate, ui = {}) {
@@ -222,6 +224,15 @@ export async function openAnnotatedSheets(files, selectedDate, ui = {}) {
         src: canvas.toDataURL('image/jpeg', 0.85),
         landscape: canvas.width > canvas.height,
       });
+      if (ui.thumbnail) {
+        // Deliberately tiny: a dedicated ~240px canvas at modest JPEG
+        // quality, regenerated per page — never the full-size dataURL.
+        const t = document.createElement('canvas');
+        t.width = 240;
+        t.height = Math.round((canvas.height / canvas.width) * 240);
+        t.getContext('2d').drawImage(canvas, 0, 0, t.width, t.height);
+        ui.thumbnail(t.toDataURL('image/jpeg', 0.7));
+      }
       donePages += 1;
       ui.bar?.(donePages / totalPages);
     }
