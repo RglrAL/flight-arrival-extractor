@@ -137,10 +137,13 @@ function textRectsInViewport(textContent, viewport) {
 }
 
 /**
- * Render one page; on page 1 add the summary — overlaid into header
- * whitespace when that space is verified empty, otherwise in a new band
- * that extends the canvas above the untouched page.
- * Returns { canvas, mode: 'overlay' | 'band' | null }.
+ * Render one page; on page 1 the summary is drawn ONTO the header area of
+ * the sheet itself — like the original handwritten workflow. Candidate
+ * positions are tried against the page's text coordinates to pick the
+ * emptiest spot; if none is fully clear the default spot is used anyway
+ * (the backing is translucent, so covered print stays faintly visible —
+ * exactly like ink over the header).
+ * Returns { canvas, mode: 'overlay' | null }.
  */
 async function renderAnnotatedPage(page, summary, selectedDate, isFirst) {
   const viewport = page.getViewport({ scale: 2 });
@@ -155,38 +158,23 @@ async function renderAnnotatedPage(page, summary, selectedDate, isFirst) {
   const H = pageCanvas.height;
   const L = layoutSummary(pctx, H, summary, selectedDate);
 
-  // Intended overlay spot: top-right header area, like the handwritten notes.
-  // A few candidate positions are tried; the box is only ever drawn on a spot
-  // verified to contain no printed text.
+  // Overlay spot: top-right header area, like the handwritten notes. A few
+  // candidate positions are tried to find a spot clear of printed text; when
+  // none is fully clear, the default spot is used regardless — the summary
+  // belongs ON the sheet (per Alan), just as the pen version wrote over the
+  // header.
   const x0 = W - L.boxW - Math.round(W * 0.015);
   const textRects = textRectsInViewport(await page.getTextContent(), viewport);
+  let y0 = Math.round(H * 0.03);
   for (const yFrac of [0.03, 0.06, 0.09]) {
-    const y0 = Math.round(H * yFrac);
-    const spot = { x: x0, y: y0, w: L.boxW, h: L.boxH };
-    if (!rectIntersectsAny(spot, textRects, Math.round(L.fs / 4))) {
-      drawSummaryBox(pctx, x0, y0, L);
-      return { canvas: pageCanvas, mode: 'overlay' };
+    const y = Math.round(H * yFrac);
+    if (!rectIntersectsAny({ x: x0, y, w: L.boxW, h: L.boxH }, textRects, Math.round(L.fs / 4))) {
+      y0 = y;
+      break;
     }
   }
-
-  // Band mode: extend the canvas upward; the original page is not touched.
-  const bandPad = Math.round(L.pad * 0.75);
-  const bandH = L.boxH + bandPad * 2;
-  const canvas = document.createElement('canvas');
-  canvas.width = W;
-  canvas.height = H + bandH;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, W, bandH);
-  drawSummaryBox(ctx, x0, bandPad, layoutSummary(ctx, H, summary, selectedDate));
-  ctx.strokeStyle = '#c8ccd2';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(0, bandH - 1);
-  ctx.lineTo(W, bandH - 1);
-  ctx.stroke();
-  ctx.drawImage(pageCanvas, 0, bandH);
-  return { canvas, mode: 'band' };
+  drawSummaryBox(pctx, x0, y0, L);
+  return { canvas: pageCanvas, mode: 'overlay' };
 }
 
 /**
