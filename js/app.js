@@ -161,14 +161,18 @@ function renderFileList() {
   toggle.textContent = showBody ? 'Hide files' : 'Manage files';
 
   const summary = $('uploadSummary');
-  if (allDone && !showBody) {
+  const compact = allDone && !showBody;
+  $('uploadCard').classList.toggle('is-compact', compact);
+  if (compact) {
     const rows = state.files.reduce((a, f) => a + f.records.length, 0);
     const issues = state.files.filter((f) => fileHealth(f) !== 'ok').length;
     summary.hidden = false;
-    summary.innerHTML = `${state.files.length} PDF${state.files.length === 1 ? '' : 's'} · ${rows} rows extracted · ` +
+    summary.innerHTML = `<span>${state.files.length} PDF${state.files.length === 1 ? '' : 's'} · ${rows} rows extracted · ` +
       (issues === 0
         ? 'all files parsed successfully <span class="okmark">✓</span>'
-        : `<span class="warn">${issues} file${issues === 1 ? '' : 's'} need${issues === 1 ? 's' : ''} attention</span>`);
+        : `<span class="warn">${issues} file${issues === 1 ? '' : 's'} need${issues === 1 ? 's' : ''} attention</span>`) +
+      '</span><button id="addMoreBtn" class="ghostbtn">+ Add PDFs</button>';
+    summary.querySelector('#addMoreBtn').addEventListener('click', () => $('fileInput').click());
   } else {
     summary.hidden = true;
   }
@@ -259,12 +263,12 @@ function sourceMeta(p) {
   return `<span class="source" title="${esc(p.sourceFile)}">${esc(shortSourceLabel(p.sourceFile))}</span>`;
 }
 
-function passengerLine(p, s) {
+function passengerLine(p, s, showSource = true) {
   const dup = s.duplicateIds.has(p.id)
     ? ' <span class="badge badge-warn" title="Appears in more than one PDF — see review panel">duplicate?</span>' : '';
   return `<li>
     <button class="passenger" data-preview="${esc(p.id)}" title="Show this row in the source PDF">${esc(p.passengerName)}</button>
-    ${sourceMeta(p)}${dup}
+    ${showSource ? sourceMeta(p) : ''}${dup}
   </li>`;
 }
 
@@ -294,7 +298,7 @@ function reviewPanelHtml(s, issueCount) {
     items.push(`<li>Review required: <strong>${esc(p.passengerName || '(no name)')}</strong> (${esc(p.flags.join(', '))}). <button class="linklike" data-audit="${esc(p.id)}">Show row</button></li>`);
   }
   if (s.noDate.length > 0) {
-    items.push(`<li>${s.noDate.length} row${s.noDate.length === 1 ? ' has' : 's have'} no arrival date and ${s.noDate.length === 1 ? 'is' : 'are'} excluded — a date is never assumed. <button class="linklike" data-audit-open>See all in audit</button></li>`);
+    items.push(`<li>${s.noDate.length} row${s.noDate.length === 1 ? ' has' : 's have'} no arrival date and ${s.noDate.length === 1 ? 'is' : 'are'} excluded. <button class="linklike" data-audit-open>See all in audit</button> <span class="reviewnote">A date is never assumed.</span></li>`);
   }
   return `<div class="reviewpanel is-warn" id="reviewPanel">
     <button class="reviewpanel-head" id="reviewToggle" aria-expanded="false" aria-controls="reviewBody">
@@ -317,16 +321,22 @@ function renderResults() {
 
   const groupsHtml = s.groups.length === 0
     ? '<p class="noresults">No passengers found whose own row matches this date.</p>'
-    : s.groups.map((g) => `
+    : s.groups.map((g) => {
+      // One shared source label in the header when the whole group comes
+      // from the same PDF; per-passenger labels only for mixed groups.
+      const uniformSource = g.passengers.every((p) => p.sourceFile === g.passengers[0].sourceFile);
+      return `
       <div class="flightgroup">
         <span class="time">${esc(g.time)}</span>
         <span class="flighthead">
           <span class="flightno">${esc(g.flightNumber)}</span>
           ${cities.length !== 1 && g.arrivalCity ? `<span class="city">${esc(g.arrivalCity)}</span>` : ''}
+          ${uniformSource ? sourceMeta(g.passengers[0]) : ''}
         </span>
         <span class="pcount">${g.passengers.length} passenger${g.passengers.length === 1 ? '' : 's'}</span>
-        <ul class="passengers">${g.passengers.map((p) => passengerLine(p, s)).join('')}</ul>
-      </div>`).join('');
+        <ul class="passengers">${g.passengers.map((p) => passengerLine(p, s, !uniformSource)).join('')}</ul>
+      </div>`;
+    }).join('');
 
   el.innerHTML = `
     <div class="results-head">
@@ -352,7 +362,7 @@ function renderResults() {
         </div>
       </div>
       <span class="spacer"></span>
-      <button id="auditBtn" class="ghostbtn" aria-expanded="false" aria-controls="audit">Audit data</button>
+      <button id="auditBtn" class="btn-quiet" aria-expanded="false" aria-controls="audit">Audit data</button>
       <p class="toolbar-note">“Print sheets + summary” reprints each original report with its arrival summary added at the top.</p>
     </div>
     <div class="board">${groupsHtml}</div>
