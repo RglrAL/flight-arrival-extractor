@@ -2,7 +2,7 @@
 // handwriting "05:10 EI/122 × 7" on top of each report).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildFileSummary, rectIntersectsAny } from '../js/sheetprint.js';
+import { buildFileSummary, rectIntersectsAny, pickupBand, PICKUP_BANDS } from '../js/sheetprint.js';
 
 function rec(over = {}) {
   return {
@@ -51,7 +51,33 @@ test('rows dated the day but missing flight/time are counted as incomplete, neve
 
 test('empty result for a file with nothing on the date', () => {
   const s = buildFileSummary([rec({ arrivalDate: '2026-09-12' })], '2026-09-13');
-  assert.deepEqual(s, { flights: [], total: 0, incomplete: 0 });
+  assert.deepEqual(s, { flights: [], total: 0, incomplete: 0, cutoff: null });
+});
+
+test('pickup bands: <8am, <10:30, <1pm; nothing at/after 1pm', () => {
+  assert.equal(pickupBand('05:10').label, '8:30am');
+  assert.equal(pickupBand('07:59').label, '8:30am');
+  assert.equal(pickupBand('08:00').label, '11am');
+  assert.equal(pickupBand('10:29').label, '11am');
+  assert.equal(pickupBand('10:30').label, '1pm');
+  assert.equal(pickupBand('12:59').label, '1pm');
+  assert.equal(pickupBand('13:00'), null);
+  assert.equal(pickupBand('14:30'), null);
+  assert.equal(pickupBand(null), null);
+  assert.equal(new Set(PICKUP_BANDS.map((b) => b.color)).size, 3); // distinct colours
+});
+
+test('summary cutoff: flights at/after 13:00 are excluded and totals reflect it', () => {
+  const s = buildFileSummary([
+    rec(),                                          // 05:10 — kept
+    rec({ arrivalTime: '14:30', flightNumber: 'EI/68' }), // after 1pm — cut
+    rec({ arrivalTime: '12:59', flightNumber: 'EI/52' }), // kept
+  ], '2026-09-13', '13:00');
+  assert.deepEqual(s.flights.map((f) => f.flightNumber), ['EI/122', 'EI/52']);
+  assert.equal(s.total, 2);
+  assert.equal(s.cutoff, '13:00');
+  // Without a cutoff nothing is excluded.
+  assert.equal(buildFileSummary([rec({ arrivalTime: '14:30' })], '2026-09-13').total, 1);
 });
 
 // The overlay-vs-band decision: the summary is only drawn over the page when

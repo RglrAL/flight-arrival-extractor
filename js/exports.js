@@ -106,10 +106,14 @@ function rowFor(p) {
  * Safari) — and the print dialog only opens after every image has decoded,
  * so nothing prints blank.
  */
-export async function printHtml(html) {
+export async function printHtml(html, title = null) {
   const iframe = document.createElement('iframe');
   iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:2px;height:2px;border:0;visibility:hidden;';
   document.body.appendChild(iframe);
+  // Some browsers name the saved PDF after the top page's title, not the
+  // iframe's — set it temporarily so the filename carries the date.
+  const previousTitle = document.title;
+  if (title) document.title = title;
   try {
     await new Promise((resolve) => {
       iframe.onload = resolve;
@@ -125,7 +129,10 @@ export async function printHtml(html) {
     iframe.contentWindow.print();
   } finally {
     // Keep the frame alive while the (modal) print dialog is open.
-    setTimeout(() => iframe.remove(), 60_000);
+    setTimeout(() => {
+      iframe.remove();
+      if (title) document.title = previousTitle;
+    }, 60_000);
   }
 }
 
@@ -154,7 +161,8 @@ export function openPrintView(schedule) {
       <ul>${schedule.incompleteOnDate.map((p) => `<li>${esc(p.passengerName)}</li>`).join('')}</ul>
     </section>`;
 
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(cityLine)} — ${esc(display)}</title>
+  const title = `Arrival schedule ${schedule.selectedDate}`;
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
   <style>
     body { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; margin: 2rem auto; max-width: 44rem; color: #111; }
     h1 { font-size: 1.4rem; margin: 0; letter-spacing: 0.04em; }
@@ -174,5 +182,5 @@ export function openPrintView(schedule) {
   <p class="totals">Total flights: ${schedule.totals.flights}<br>Total passengers: ${schedule.totals.passengers}</p>
   </body></html>`;
 
-  printHtml(html);
+  printHtml(html, title);
 }

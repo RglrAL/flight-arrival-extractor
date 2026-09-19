@@ -55,8 +55,9 @@ export function tdFromFileName(fileName) {
  * codeshare flight numbers (e.g. SQ/2170 operated by another carrier)
  * intentionally fall through unless the marketing prefix is listed.
  */
-const DUBLIN_T2 = new Set(['EI', 'AA', 'DL', 'UA', 'EK', 'EY']);
-const DUBLIN_T1 = new Set(['FR', 'BA', 'AF', 'KL', 'LH', 'AC', 'WS', 'TS', 'QR', 'IB', 'TK', 'LX', 'SN', 'SK', 'TP', 'AZ', 'LO', 'OS']);
+/* BA and AF moved to T2 per Alan (ground truth at the airport, Sep 2026). */
+const DUBLIN_T2 = new Set(['EI', 'AA', 'DL', 'UA', 'EK', 'EY', 'BA', 'AF']);
+const DUBLIN_T1 = new Set(['FR', 'KL', 'LH', 'AC', 'WS', 'TS', 'QR', 'IB', 'TK', 'LX', 'SN', 'SK', 'TP', 'AZ', 'LO', 'OS']);
 
 /**
  * "EI/122" + "Dublin" → "T1" | "T2" | null.

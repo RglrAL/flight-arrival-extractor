@@ -25,16 +25,40 @@ const INK = {
 };
 
 /**
+ * Pick-up band for an arrival time — matches the handwriting grid rows:
+ * arrivals before 08:00 → 8:30am pickup, before 10:30 → 11am, before
+ * 13:00 → 1pm. Highlighter colours are multiply-friendly pastels.
+ * Returns null at/after 13:00 (outside the operation's day).
+ * Pure function (Node-testable).
+ */
+export const PICKUP_BANDS = [
+  { before: '08:00', label: '8:30am', color: '#ffc4d0' }, // pink
+  { before: '10:30', label: '11am', color: '#ffe75e' },   // yellow
+  { before: '13:00', label: '1pm', color: '#b7ecb0' },    // green
+];
+
+export function pickupBand(hhmm) {
+  if (!hhmm) return null;
+  for (const band of PICKUP_BANDS) {
+    if (hhmm < band.before) return band;
+  }
+  return null;
+}
+
+/**
  * Per-file summary of a selected date, from that file's validated records.
  * Pure function (Node-testable).
- * Returns { flights: [{ time, flightNumber, arrivalCity, count }], total, incomplete }
- * — flights time-sorted, total = passengers with a flight+time on the date,
- * incomplete = passengers dated that day but with no flight/time on their row.
+ * Returns { flights: [{ time, flightNumber, arrivalCity, count }], total,
+ * incomplete, cutoff } — flights time-sorted, total = passengers with a
+ * flight+time on the date, incomplete = passengers dated that day but with
+ * no flight/time on their row. When `cutoff` (HH:MM) is given, flights at
+ * or after it are excluded (the operation's day ends at 1pm).
  */
-export function buildFileSummary(records, selectedDate) {
+export function buildFileSummary(records, selectedDate, cutoff = null) {
   const onDate = records.filter((r) => r.arrivalDate === selectedDate);
-  const scheduled = onDate.filter((r) => r.flightNumber != null && r.arrivalTime != null);
-  const incomplete = onDate.length - scheduled.length;
+  const scheduled = onDate.filter((r) =>
+    r.flightNumber != null && r.arrivalTime != null && (cutoff == null || r.arrivalTime < cutoff));
+  const incomplete = onDate.filter((r) => r.flightNumber == null || r.arrivalTime == null).length;
 
   const map = new Map();
   for (const r of scheduled) {
@@ -47,7 +71,7 @@ export function buildFileSummary(records, selectedDate) {
   const flights = [...map.values()].sort(
     (a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : a.flightNumber.localeCompare(b.flightNumber)),
   );
-  return { flights, total: scheduled.length, incomplete };
+  return { flights, total: scheduled.length, incomplete, cutoff };
 }
 
 /**
@@ -87,8 +111,9 @@ function layoutSummary(ctx, H, summary, selectedDate, maxBoxH = Infinity) {
       });
     }
     const both = termCounts.T1 > 0 && termCounts.T2 > 0;
+    const cutoffNote = summary.cutoff ? ' (to 1pm)' : '';
     lines.push({
-      text: `Total: ${summary.total} passenger${summary.total === 1 ? '' : 's'}${both ? `  ·  T1 ${termCounts.T1} · T2 ${termCounts.T2}` : ''}`,
+      text: `Total: ${summary.total} passenger${summary.total === 1 ? '' : 's'}${cutoffNote}${both ? `  ·  T1 ${termCounts.T1} · T2 ${termCounts.T2}` : ''}`,
       color: INK.head, bold: true,
     });
   }
@@ -207,16 +232,17 @@ function drawTd(ctx, W, td) {
 
 /**
  * Highlighter over the table rows whose own Date of Arrival matches the
- * selected date. 'multiply' blending keeps the printed text crisp under the
- * yellow, exactly like a real highlighter pen.
+ * selected date, coloured by pick-up band. 'multiply' blending keeps the
+ * printed text crisp under the ink, exactly like a real highlighter pen.
  */
-function drawRowHighlights(ctx, viewport, pdfBoxes) {
-  if (pdfBoxes.length === 0) return;
+function drawRowHighlights(ctx, viewport, highlights) {
+  if (highlights.length === 0) return;
   ctx.save();
   ctx.globalCompositeOperation = 'multiply';
-  ctx.fillStyle = '#ffe75e';
-  for (const b of pdfBoxes) {
+  for (const h of highlights) {
+    const b = h.rect;
     const [ax0, ay0, ax1, ay1] = viewport.convertToViewportRectangle([b.x, b.y, b.x + b.w, b.y + b.h]);
+    ctx.fillStyle = h.color;
     ctx.fillRect(Math.min(ax0, ax1) - 3, Math.min(ay0, ay1) - 2, Math.abs(ax1 - ax0) + 6, Math.abs(ay1 - ay0) + 4);
   }
   ctx.restore();
@@ -267,10 +293,19 @@ function drawPickupGrid(ctx, W, H, textItems, boxRect) {
   }
   ctx.stroke();
   ctx.font = `600 ${fs}px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif`;
-  ctx.fillStyle = INK.td;
   ctx.textAlign = 'left';
-  ['8:30am', '11am', '1pm'].forEach((label, r) => {
-    ctx.fillText(label, gx + Math.round(fs * 0.6), yTop + rowH * r + Math.round(rowH * 0.62));
+  // Each pickup row carries its band's highlighter swatch — the key that
+  // links row colours in the table to pickup times.
+  PICKUP_BANDS.forEach((band, r) => {
+    const sw = Math.round(fs * 0.7);
+    const sy = yTop + rowH * r + Math.round((rowH - sw) / 2);
+    ctx.fillStyle = band.color;
+    ctx.fillRect(gx + Math.round(fs * 0.5), sy, sw, sw);
+    ctx.strokeStyle = INK.td;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(gx + Math.round(fs * 0.5), sy, sw, sw);
+    ctx.fillStyle = INK.td;
+    ctx.fillText(band.label, gx + Math.round(fs * 0.5) + sw + Math.round(fs * 0.45), yTop + rowH * r + Math.round(rowH * 0.62));
   });
   ctx.restore();
 }
@@ -284,21 +319,26 @@ function drawPickupGrid(ctx, W, H, textItems, boxRect) {
  * exactly like ink over the header).
  * Returns { canvas, mode: 'overlay' | null }.
  */
-async function renderAnnotatedPage(page, summary, selectedDate, isFirst, tdName = null, highlightBoxes = []) {
+async function renderAnnotatedPage(page, textContent, summary, selectedDate, isFirst, tdName = null, highlights = []) {
   const viewport = page.getViewport({ scale: 2 });
   const pageCanvas = document.createElement('canvas');
   pageCanvas.width = Math.floor(viewport.width);
   pageCanvas.height = Math.floor(viewport.height);
   const pctx = pageCanvas.getContext('2d');
   await page.render({ canvasContext: pctx, viewport }).promise;
-  drawRowHighlights(pctx, viewport, highlightBoxes);
-  if (!isFirst) return { canvas: pageCanvas, mode: null };
+  drawRowHighlights(pctx, viewport, highlights);
 
   const W = pageCanvas.width;
   const H = pageCanvas.height;
-  const textItems = textItemsInViewport(await page.getTextContent(), viewport);
-  const textRects = textItems.map((t) => t.rect);
   const td = tdName ? tdPlacement(pctx, W, H, tdName) : null;
+  if (!isFirst) {
+    // Subsequent pages still carry the TD name at the top.
+    if (td) drawTd(pctx, W, td);
+    return { canvas: pageCanvas, mode: null };
+  }
+
+  const textItems = textItemsInViewport(textContent, viewport);
+  const textRects = textItems.map((t) => t.rect);
 
   // The box lives between the TD line and the table's own header row.
   const tableHeader = textItems.find((t) => t.str.trim() === 'Passenger Name');
@@ -349,18 +389,30 @@ export async function openAnnotatedSheets(files, selectedDate, ui = {}) {
   const readable = files.filter((f) => f.doc);
   const totalPages = readable.reduce((a, f) => a + f.doc.numPages, 0);
 
+  const CUTOFF = '13:00'; // the operation's day ends at 1pm
+
   const sections = [];
   let donePages = 0;
   for (let fi = 0; fi < readable.length; fi++) {
     const f = readable[fi];
-    const summary = buildFileSummary(f.records, selectedDate);
+    const summary = buildFileSummary(f.records, selectedDate, CUTOFF);
     const imgs = [];
     for (let p = 1; p <= f.doc.numPages; p++) {
       if (ui.cancelled?.()) return false;
       ui.status?.(`Rendering ${f.name} — page ${p} of ${f.doc.numPages}…`);
-      // Rows on this page whose own date matches → yellow highlighter.
+      const page = await f.doc.getPage(p);
+      const textContent = await page.getTextContent();
+      // Genuinely blank PDF pages are dropped from the print.
+      if (!textContent.items.some((it) => it.str && it.str.trim() !== '')) {
+        donePages += 1;
+        ui.bar?.(donePages / totalPages);
+        continue;
+      }
+      // Rows on this page whose own date matches (and land before the 1pm
+      // cutoff) → highlighter in their pick-up band's colour.
       const highlights = (f.records || [])
-        .filter((r) => r.sourcePage === p && r.arrivalDate === selectedDate && r.geometry?.cellBoxes)
+        .filter((r) => r.sourcePage === p && r.arrivalDate === selectedDate
+          && r.arrivalTime && r.arrivalTime < CUTOFF && r.geometry?.cellBoxes)
         .map((r) => {
           const boxes = Object.values(r.geometry.cellBoxes);
           if (boxes.length === 0) return null;
@@ -368,11 +420,10 @@ export async function openAnnotatedSheets(files, selectedDate, ui = {}) {
           const x1 = Math.max(...boxes.map((b) => b.x + b.w));
           const y0 = Math.min(...boxes.map((b) => b.y));
           const y1 = Math.max(...boxes.map((b) => b.y + b.h));
-          return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+          return { rect: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, color: pickupBand(r.arrivalTime).color };
         })
         .filter(Boolean);
-      const page = await f.doc.getPage(p);
-      const { canvas } = await renderAnnotatedPage(page, summary, selectedDate, p === 1, tdFromFileName(f.name), highlights);
+      const { canvas } = await renderAnnotatedPage(page, textContent, summary, selectedDate, p === 1, tdFromFileName(f.name), highlights);
       imgs.push({
         src: canvas.toDataURL('image/jpeg', 0.85),
         landscape: canvas.width > canvas.height,
@@ -400,13 +451,17 @@ export async function openAnnotatedSheets(files, selectedDate, ui = {}) {
     s.imgs.map((im) => `<img class="${im.landscape ? 'landscape' : 'portrait'}" src="${im.src}" alt="${esc(s.name)}">`).join('\n'),
   ).join('\n');
 
+  // Title doubles as the suggested filename when saving the print as PDF.
+  const title = `Arrival sheets ${selectedDate}`;
   await printHtml(`<!DOCTYPE html><html><head><meta charset="utf-8">
-  <title>Arrival sheets — ${esc(formatDisplayDate(selectedDate))}</title>
+  <title>${esc(title)}</title>
   <style>
     body { margin: 0; }
-    img { display: block; width: 100%; page-break-after: always; }
+    /* Constrain both dimensions so a page image can never spill onto (and
+       create) an extra blank sheet, whatever the paper size. */
+    img { display: block; margin: 0 auto; max-width: 100%; max-height: 98vh; object-fit: contain; page-break-after: always; break-inside: avoid; }
     img:last-child { page-break-after: auto; }
     @page { size: landscape; margin: 0.4cm; }
-  </style></head><body>${body}</body></html>`);
+  </style></head><body>${body}</body></html>`, title);
   return true;
 }

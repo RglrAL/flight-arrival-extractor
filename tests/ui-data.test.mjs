@@ -29,7 +29,8 @@ test('shortSourceLabel takes the report code from the filename', () => {
 test('terminalFor maps Dublin airlines; never guesses unknowns or other cities', () => {
   assert.equal(terminalFor('EI/122', 'Dublin'), 'T2');
   assert.equal(terminalFor('DL/154', 'Dublin'), 'T2');
-  assert.equal(terminalFor('BA/826', 'Dublin'), 'T1');
+  assert.equal(terminalFor('BA/826', 'Dublin'), 'T2'); // BA moved to T2 (per Alan)
+  assert.equal(terminalFor('AF/3562', 'Dublin'), 'T2'); // AF moved to T2 (per Alan)
   assert.equal(terminalFor('WS/46', 'dublin'), 'T1'); // case-insensitive city
   assert.equal(terminalFor('SQ/2170', 'Dublin'), null); // codeshare/unknown → no guess
   assert.equal(terminalFor('EI/122', 'Shannon'), null); // mapping is Dublin-only
