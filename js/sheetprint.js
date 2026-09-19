@@ -281,18 +281,12 @@ function drawPickupGrid(ctx, W, H, textItems, boxRect) {
   ctx.stroke();
   ctx.font = `600 ${fs}px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif`;
   ctx.textAlign = 'left';
-  // Each pickup row carries its band's highlighter swatch — the key that
-  // links row colours in the table to pickup times.
+  ctx.fillStyle = INK.td;
+  // Plain pickup-time labels — no colour swatches: the grid shows pickup
+  // times while highlight colours mark arrival windows, and pairing them
+  // implied a mapping that doesn't tally.
   PICKUP_BANDS.forEach((band, r) => {
-    const sw = Math.round(fs * 0.7);
-    const sy = yTop + rowH * r + Math.round((rowH - sw) / 2);
-    ctx.fillStyle = band.color;
-    ctx.fillRect(gx + Math.round(fs * 0.5), sy, sw, sw);
-    ctx.strokeStyle = INK.td;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(gx + Math.round(fs * 0.5), sy, sw, sw);
-    ctx.fillStyle = INK.td;
-    ctx.fillText(band.label, gx + Math.round(fs * 0.5) + sw + Math.round(fs * 0.45), yTop + rowH * r + Math.round(rowH * 0.62));
+    ctx.fillText(band.label, gx + Math.round(fs * 0.6), yTop + rowH * r + Math.round(rowH * 0.62));
   });
   ctx.restore();
 }
