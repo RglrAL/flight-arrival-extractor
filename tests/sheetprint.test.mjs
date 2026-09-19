@@ -2,7 +2,8 @@
 // handwriting "05:10 EI/122 × 7" on top of each report).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildFileSummary, rectIntersectsAny, pickupBand, PICKUP_BANDS } from '../js/sheetprint.js';
+import { buildFileSummary, rectIntersectsAny } from '../js/sheetprint.js';
+import { pickupBand, PICKUP_BANDS } from '../js/ui-data.js';
 
 function rec(over = {}) {
   return {

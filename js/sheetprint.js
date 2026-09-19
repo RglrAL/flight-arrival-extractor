@@ -10,7 +10,7 @@
 
 import { formatDisplayDate } from './normalize.js';
 import { printHtml } from './exports.js';
-import { terminalFor, tdFromFileName } from './ui-data.js';
+import { terminalFor, tdFromFileName, pickupBand, PICKUP_BANDS } from './ui-data.js';
 
 // Summary "ink" colours (print is always on white paper). Terminal is
 // double-encoded — the T1/T2 label carries the information, colour just
@@ -23,27 +23,6 @@ const INK = {
   neutral: '#334155',  // unknown terminal — no colour claim
   warn: '#8a5a00',
 };
-
-/**
- * Pick-up band for an arrival time — matches the handwriting grid rows:
- * arrivals before 08:00 → 8:30am pickup, before 10:30 → 11am, before
- * 13:00 → 1pm. Highlighter colours are multiply-friendly pastels.
- * Returns null at/after 13:00 (outside the operation's day).
- * Pure function (Node-testable).
- */
-export const PICKUP_BANDS = [
-  { before: '08:00', label: '8:30am', color: '#ffc4d0' }, // pink
-  { before: '10:30', label: '11am', color: '#ffe75e' },   // yellow
-  { before: '13:00', label: '1pm', color: '#b7ecb0' },    // green
-];
-
-export function pickupBand(hhmm) {
-  if (!hhmm) return null;
-  for (const band of PICKUP_BANDS) {
-    if (hhmm < band.before) return band;
-  }
-  return null;
-}
 
 /**
  * Per-file summary of a selected date, from that file's validated records.
@@ -108,6 +87,8 @@ function layoutSummary(ctx, H, summary, selectedDate, maxBoxH = Infinity) {
         text: `${f.time}   ${f.flightNumber}${city}   × ${f.count}${term ? `   ${term}` : ''}`,
         color: term ? INK[term] : INK.neutral,
         bold: true,
+        // Same highlighter colour as the flight's rows in the table below.
+        bg: pickupBand(f.time)?.color ?? null,
       });
     }
     const both = termCounts.T1 > 0 && termCounts.T2 > 0;
@@ -160,6 +141,12 @@ function drawSummaryBox(ctx, x0, y0, L) {
   L.columns.forEach((col, ci) => {
     let cy = y0 + L.pad + L.fs;
     for (const l of col) {
+      if (l.bg) {
+        ctx.fillStyle = l.bg;
+        ctx.beginPath();
+        ctx.roundRect(cx - Math.round(L.pad * 0.35), cy - L.fs, L.colWidths[ci] + Math.round(L.pad * 0.7), L.lineH, 4);
+        ctx.fill();
+      }
       ctx.font = `${l.bold ? '600 ' : ''}${L.fs}px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif`;
       ctx.fillStyle = l.color;
       ctx.fillText(l.text, cx, cy);

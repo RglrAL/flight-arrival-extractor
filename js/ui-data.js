@@ -49,6 +49,26 @@ export function tdFromFileName(fileName) {
 }
 
 /**
+ * Pick-up bands for the printed outputs — arrivals before 08:00 go on the
+ * 8:30am pickup, before 10:30 the 11am, before 13:00 the 1pm. Colours are
+ * multiply-friendly highlighter pastels. Arrivals at/after 13:00 are outside
+ * the operation's day (no band).
+ */
+export const PICKUP_BANDS = [
+  { before: '08:00', label: '8:30am', color: '#ffc4d0' }, // pink
+  { before: '10:30', label: '11am', color: '#ffe75e' },   // yellow
+  { before: '13:00', label: '1pm', color: '#b7ecb0' },    // green
+];
+
+export function pickupBand(hhmm) {
+  if (!hhmm) return null;
+  for (const band of PICKUP_BANDS) {
+    if (hhmm < band.before) return band;
+  }
+  return null;
+}
+
+/**
  * Dublin Airport terminal by operating-airline prefix. EDITABLE — Alan
  * should correct any assignment that doesn't match current daa practice.
  * An airline in neither set gets NO terminal shown (never guessed) —

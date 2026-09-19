@@ -2,7 +2,7 @@
 // Excel uses the vendored SheetJS global (window.XLSX).
 
 import { formatDisplayDate } from './normalize.js';
-import { terminalFor } from './ui-data.js';
+import { terminalFor, pickupBand } from './ui-data.js';
 
 /** Flat passenger-level rows in schedule (group) order — brief §21 columns. */
 function flatRows(schedule) {
@@ -148,9 +148,13 @@ export function openPrintView(schedule) {
     const termHtml = term
       ? ` — <span style="color:${term === 'T1' ? '#047857' : '#1d4ed8'}">${term}</span>`
       : '';
+    const band = pickupBand(g.time);
+    const timeHtml = band
+      ? `<span style="background:${band.color};padding:0 6px;border-radius:4px">${esc(g.time)}</span>`
+      : esc(g.time);
     return `
     <section class="flight">
-      <h2>${esc(g.time)} — ${esc(g.flightNumber)}${termHtml}${cities.length !== 1 && g.arrivalCity ? ` (${esc(g.arrivalCity)})` : ''}</h2>
+      <h2>${timeHtml} — ${esc(g.flightNumber)}${termHtml}${cities.length !== 1 && g.arrivalCity ? ` (${esc(g.arrivalCity)})` : ''}</h2>
       <ul>${g.passengers.map((p) => `<li>${esc(p.passengerName)}</li>`).join('')}</ul>
     </section>`;
   }).join('');
