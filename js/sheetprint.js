@@ -254,15 +254,26 @@ function drawPickupGrid(ctx, W, H, textItems, boxRect) {
   const rowH = Math.max(26, Math.min(48, Math.floor(availH / 3)));
   const gridH = rowH * 3;
   const labelW = Math.round(W * 0.075);
-  const writeW = Math.round(W * 0.17);
-  const gridW = labelW + writeW;
+  let gridW = labelW + Math.round(W * 0.17);
 
+  // Placement: centred under the title; the summary box always wins a
+  // collision. Slide left → shrink the writing column → as a last resort
+  // sit (white-backed) over the letterhead. Never overlap the box.
+  const minLeft = Math.round(W * 0.22); // preferred: stay clear of the letterhead
   let gx = (title ? title.rect.x + title.rect.w / 2 : W / 2) - gridW / 2;
-  // Slide left if the summary box reaches into the centre of the header.
   if (boxRect && rectIntersectsAny({ x: gx, y: yTop, w: gridW, h: gridH }, [boxRect], 8)) {
     gx = boxRect.x - gridW - 14;
+    if (gx < minLeft) {
+      const maxW = boxRect.x - 14 - minLeft;
+      if (maxW >= labelW + Math.round(W * 0.08)) {
+        gridW = maxW;
+        gx = minLeft;
+      } else {
+        gx = Math.round(W * 0.015);
+        gridW = Math.min(gridW, boxRect.x - 14 - gx);
+      }
+    }
   }
-  gx = Math.max(gx, Math.round(W * 0.22)); // stay clear of the letterhead
 
   const fs = Math.round(rowH * 0.42);
   ctx.save();
