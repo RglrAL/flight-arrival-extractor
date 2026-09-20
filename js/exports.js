@@ -108,7 +108,12 @@ function rowFor(p) {
  */
 export async function printHtml(html, title = null) {
   const iframe = document.createElement('iframe');
-  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:2px;height:2px;border:0;visibility:hidden;';
+  // Off-screen but REAL-sized: Safari resolves viewport units and layout
+  // against the iframe's own size (a 2px frame printed blank there), and
+  // display:none frames don't print at all in some engines.
+  iframe.style.cssText = 'position:fixed;right:-2400px;bottom:0;width:1122px;height:794px;border:0;';
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.tabIndex = -1;
   document.body.appendChild(iframe);
   // Some browsers name the saved PDF after the top page's title, not the
   // iframe's — set it temporarily so the filename carries the date.
@@ -125,6 +130,8 @@ export async function printHtml(html, title = null) {
         if (img.complete) r();
         else { img.onload = r; img.onerror = r; }
       }))));
+    // Let layout settle after decode before opening the dialog (Safari).
+    await new Promise((r) => setTimeout(r, 150));
     iframe.contentWindow.focus();
     iframe.contentWindow.print();
   } finally {

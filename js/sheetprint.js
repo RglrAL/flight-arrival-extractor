@@ -450,8 +450,11 @@ export async function openAnnotatedSheets(files, selectedDate, ui = {}) {
   <style>
     body { margin: 0; }
     /* Constrain both dimensions so a page image can never spill onto (and
-       create) an extra blank sheet, whatever the paper size. */
-    img { display: block; margin: 0 auto; max-width: 100%; max-height: 98vh; object-fit: contain; page-break-after: always; break-inside: avoid; }
+       create) an extra blank sheet, whatever the paper size. Physical units
+       only: Safari resolves vh against the (hidden) iframe viewport, which
+       printed blank — cm are absolute in print in every engine.
+       19.6cm fits inside landscape A4 (20.2cm usable) and Letter (20.8cm). */
+    img { display: block; margin: 0 auto; max-width: 100%; max-height: 19.6cm; object-fit: contain; page-break-after: always; break-inside: avoid; }
     img:last-child { page-break-after: auto; }
     @page { size: landscape; margin: 0.4cm; }
   </style></head><body>${body}</body></html>`, title);
