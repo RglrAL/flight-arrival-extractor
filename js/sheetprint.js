@@ -416,10 +416,16 @@ export async function openAnnotatedSheets(files, selectedDate, ui = {}) {
         })
         .filter(Boolean);
       const { canvas } = await renderAnnotatedPage(page, textContent, summary, selectedDate, p === 1, tdFromFileName(f.name), highlights);
-      imgs.push({
-        src: canvas.toDataURL('image/jpeg', 0.85),
-        landscape: canvas.width > canvas.height,
+      // Freeze each page to a Blob URL — far lighter on WebKit's memory than
+      // multi-megabyte base64 strings, and plain <img> prints reliably where
+      // stacks of large data-URLs can falter.
+      const src = await new Promise((resolve) => {
+        canvas.toBlob(
+          (blob) => resolve(blob ? URL.createObjectURL(blob) : canvas.toDataURL('image/jpeg', 0.85)),
+          'image/jpeg', 0.85,
+        );
       });
+      imgs.push({ src, landscape: canvas.width > canvas.height });
       if (ui.thumbnail) {
         // Deliberately tiny: a dedicated ~240px canvas at modest JPEG
         // quality, regenerated per page — never the full-size dataURL.
@@ -440,23 +446,31 @@ export async function openAnnotatedSheets(files, selectedDate, ui = {}) {
 
   const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const body = sections.map((s) =>
-    s.imgs.map((im) => `<img class="${im.landscape ? 'landscape' : 'portrait'}" src="${im.src}" alt="${esc(s.name)}">`).join('\n'),
+    s.imgs.map((im) => `<div class="print-sheet"><img src="${im.src}" alt="${esc(s.name)}"></div>`).join('\n'),
   ).join('\n');
 
   // Title doubles as the suggested filename when saving the print as PDF.
   const title = `Arrival sheets ${selectedDate}`;
+  // Deliberately simple, Safari-safe print CSS: fixed page-sized boxes in
+  // absolute mm, overflow hidden — spill onto phantom blank pages is
+  // structurally impossible, and no viewport-relative units anywhere
+  // (WebKit evaluates those against the browser window, not the paper).
   await printHtml(`<!DOCTYPE html><html><head><meta charset="utf-8">
   <title>${esc(title)}</title>
   <style>
-    body { margin: 0; }
-    /* Constrain both dimensions so a page image can never spill onto (and
-       create) an extra blank sheet, whatever the paper size. Physical units
-       only: Safari resolves vh against the (hidden) iframe viewport, which
-       printed blank — cm are absolute in print in every engine.
-       19.6cm fits inside landscape A4 (20.2cm usable) and Letter (20.8cm). */
-    img { display: block; margin: 0 auto; max-width: 100%; max-height: 19.6cm; object-fit: contain; page-break-after: always; break-inside: avoid; }
-    img:last-child { page-break-after: auto; }
-    @page { size: landscape; margin: 0.4cm; }
+    @page { size: A4 landscape; margin: 0; }
+    html, body { margin: 0; padding: 0; }
+    .print-sheet {
+      width: 296mm; height: 209mm; overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      break-after: page; page-break-after: always;
+    }
+    .print-sheet:last-child { break-after: auto; page-break-after: auto; }
+    .print-sheet img { display: block; width: 100%; height: 100%; object-fit: contain; }
   </style></head><body>${body}</body></html>`, title);
+
+  // Free the frozen page blobs once the print dialog has had its time.
+  const blobUrls = sections.flatMap((s) => s.imgs.map((im) => im.src)).filter((u) => u.startsWith('blob:'));
+  setTimeout(() => blobUrls.forEach((u) => URL.revokeObjectURL(u)), 90_000);
   return true;
 }

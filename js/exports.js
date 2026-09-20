@@ -125,15 +125,20 @@ export async function printHtml(html, title = null) {
       iframe.srcdoc = html;
     });
     const doc = iframe.contentDocument;
+    const win = iframe.contentWindow;
     await Promise.all([...doc.images].map((img) =>
       img.decode().catch(() => new Promise((r) => {
         if (img.complete) r();
         else { img.onload = r; img.onerror = r; }
       }))));
-    // Let layout settle after decode before opening the dialog (Safari).
-    await new Promise((r) => setTimeout(r, 150));
-    iframe.contentWindow.focus();
-    iframe.contentWindow.print();
+    // Real readiness barrier, not a timeout: fonts loaded, two frame cycles,
+    // and one forced layout — in WebKit "the <img> exists" is not "the
+    // pixels are available to the print renderer".
+    await doc.fonts.ready.catch(() => {});
+    await new Promise((r) => win.requestAnimationFrame(() => win.requestAnimationFrame(r)));
+    void doc.body.offsetHeight;
+    win.focus();
+    win.print();
   } finally {
     // Keep the frame alive while the (modal) print dialog is open.
     setTimeout(() => {
