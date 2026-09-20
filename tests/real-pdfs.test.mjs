@@ -35,7 +35,10 @@ async function extractFile(path, name) {
 }
 
 async function extractAll() {
-  const files = readdirSync(SAMPLES).filter((f) => f.toLowerCase().endsWith('.pdf'));
+  // Skip the app's own printed output ("Arrival sheets …pdf") that may be
+  // saved alongside the source reports.
+  const files = readdirSync(SAMPLES).filter((f) =>
+    f.toLowerCase().endsWith('.pdf') && !/^arrival/i.test(f));
   const results = new Map();
   for (const f of files) {
     results.set(f, await extractFile(join(SAMPLES, f), f));

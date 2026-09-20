@@ -451,22 +451,25 @@ export async function openAnnotatedSheets(files, selectedDate, ui = {}) {
 
   // Title doubles as the suggested filename when saving the print as PDF.
   const title = `Arrival sheets ${selectedDate}`;
-  // Deliberately simple, Safari-safe print CSS: fixed page-sized boxes in
-  // absolute mm, overflow hidden — spill onto phantom blank pages is
-  // structurally impossible, and no viewport-relative units anywhere
-  // (WebKit evaluates those against the browser window, not the paper).
+  // Deliberately simple, Safari-safe print CSS. The sheet box is sized well
+  // INSIDE any browser-imposed printable area: iOS Safari ignores
+  // 'margin: 0' and adds its own header/footer margins, so a full-page
+  // 209mm box overflowed by ~14mm and split every sheet across two pages
+  // (the 'blank sheets'). 175mm leaves slack for the strictest margins on
+  // A4 and Letter, landscape or (mis-set) portrait. No viewport units.
   await printHtml(`<!DOCTYPE html><html><head><meta charset="utf-8">
   <title>${esc(title)}</title>
   <style>
-    @page { size: A4 landscape; margin: 0; }
+    @page { size: A4 landscape; margin: 8mm; }
     html, body { margin: 0; padding: 0; }
     .print-sheet {
-      width: 296mm; height: 209mm; overflow: hidden;
+      width: 100%; height: 175mm; overflow: hidden;
       display: flex; align-items: center; justify-content: center;
       break-after: page; page-break-after: always;
+      break-inside: avoid; page-break-inside: avoid;
     }
     .print-sheet:last-child { break-after: auto; page-break-after: auto; }
-    .print-sheet img { display: block; width: 100%; height: 100%; object-fit: contain; }
+    .print-sheet img { display: block; max-width: 100%; max-height: 100%; }
   </style></head><body>${body}</body></html>`, title);
 
   // Free the frozen page blobs once the print dialog has had its time.
